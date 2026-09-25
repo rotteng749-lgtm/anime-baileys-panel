@@ -15,6 +15,7 @@ import {
   Cable,
   Check,
   Cpu,
+  FileCode,
   Layers,
   Link2,
   MessagesSquare,
@@ -402,6 +403,12 @@ export default function Landing() {
                     title: "Answer traffic",
                     body: "Inbound events land in the console and the message inbox. Dispatch replies from the composer, or hand everything to a webhook.",
                   },
+                  {
+                    n: "04",
+                    icon: FileCode,
+                    title: "Install an egg",
+                    body: "An egg lays a whole agent onto the session — scripts, manifests, config — then wings boots it with a live socket already in scope.",
+                  },
                 ].map((step) => (
                   <li key={step.n} className="flex gap-5">
                     <div className="flex flex-col items-center">
@@ -586,7 +593,7 @@ bot.on("message", async (message) => {
             </h2>
             <p className="mx-auto mt-4 max-w-xl leading-relaxed text-muted-foreground">
               Provision a session, scan the code, and watch the socket come up.
-              The catalog is there when you want more.
+              Install an egg when you want an agent doing the work.
             </p>
             <div className="mt-9 flex flex-wrap justify-center gap-3">
               <Button size="lg" asChild>
@@ -596,7 +603,10 @@ bot.on("message", async (message) => {
                 </Link>
               </Button>
               <Button size="lg" variant="outline" asChild>
-                <Link to="/catalog">Browse the catalog</Link>
+                <Link to="/eggs">Browse the eggs</Link>
+              </Button>
+              <Button size="lg" variant="ghost" asChild>
+                <Link to="/docs">Read the docs</Link>
               </Button>
             </div>
           </div>

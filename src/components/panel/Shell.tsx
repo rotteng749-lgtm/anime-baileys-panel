@@ -6,11 +6,13 @@ import {
   Cable,
   CalendarClock,
   FileStack,
+  FolderTree,
   KeyRound,
   LogOut,
   MessagesSquare,
   Radio,
   Settings2,
+  Terminal,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -26,6 +28,8 @@ import { KaizenWordmark, SectionTag } from "@/components/Brand";
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: Activity, end: true },
   { to: "/dashboard/sessions", label: "Sessions", icon: Cable },
+  { to: "/dashboard/files", label: "Files", icon: FolderTree },
+  { to: "/dashboard/wings", label: "Wings", icon: Terminal },
   { to: "/dashboard/console", label: "Console", icon: Radio },
   { to: "/dashboard/messages", label: "Messages", icon: MessagesSquare },
   { to: "/dashboard/webhooks", label: "Webhooks", icon: Boxes },

@@ -90,6 +90,42 @@ export const BOOKING_STATUSES = [
 ] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
+/** Sections of the egg catalog. */
+export const EGG_CATEGORIES = [
+  "Starter",
+  "Blast",
+  "Auto-reply",
+  "Commerce",
+  "Developer",
+] as const;
+export type EggCategory = (typeof EGG_CATEGORIES)[number];
+
+/** Install lifecycle for an egg on a session. */
+export const INSTALL_STATUSES = [
+  "queued",
+  "installing",
+  "installed",
+  "failed",
+] as const;
+export type InstallStatus = (typeof INSTALL_STATUSES)[number];
+
+/** File types the agent's file manager is tuned for. */
+export const ALLOWED_EXTENSIONS = [
+  "js",
+  "mjs",
+  "cjs",
+  "json",
+  "txt",
+  "md",
+  "env",
+  "yaml",
+  "yml",
+  "sh",
+  "ts",
+  "html",
+  "css",
+] as const;
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -333,6 +369,98 @@ const schema = defineSchema(
       expiresAt: v.number(),
       createdAt: v.number(),
     }).index("by_token", ["tokenHash"]),
+
+    // ------------------------------------------------------------------
+    // Eggs — installable Baileys bot templates
+    //
+    // Same shape as a server-hosting egg: a manifest plus the files it
+    // ships, an install script, and the command the agent starts with.
+    // ------------------------------------------------------------------
+
+    eggs: defineTable({
+      slug: v.string(),
+      name: v.string(),
+      author: v.string(),
+      authorId: v.optional(v.id("users")),
+      description: v.string(),
+      category: v.string(),
+      tags: v.array(v.string()),
+      /** Which base runtime this egg targets, e.g. "nodejs_22". */
+      runtime: v.string(),
+      /** The command the agent runs when the bot starts. */
+      startup: v.string(),
+      /** The install script, run once before first start. */
+      installScript: v.string(),
+      /** Default environment variables baked into the install. */
+      env: v.optional(v.array(v.string())),
+      accent: v.union(
+        v.literal("neon"),
+        v.literal("holo"),
+        v.literal("sakura"),
+        v.literal("ember"),
+      ),
+      official: v.boolean(),
+      status: v.union(v.literal("published"), v.literal("pending"), v.literal("draft")),
+      installs: v.number(),
+      createdAt: v.number(),
+    })
+      .index("by_slug", ["slug"])
+      .index("by_created", ["createdAt"]),
+
+    /** Files an egg ships with — the .js, .json and anything else. */
+    eggFiles: defineTable({
+      eggId: v.id("eggs"),
+      path: v.string(),
+      contents: v.string(),
+      createdAt: v.number(),
+    }).index("by_egg", ["eggId"]),
+
+    /** Base runtimes, the thing an egg is built against. */
+    runtimes: defineTable({
+      id: v.string(),
+      label: v.string(),
+      nodeVersion: v.string(),
+      baileysVersion: v.string(),
+      description: v.string(),
+      deprecated: v.optional(v.boolean()),
+    }).index("by_runtime_id", ["id"]),
+
+    // ------------------------------------------------------------------
+    // Wings — the per-session agent
+    // ------------------------------------------------------------------
+
+    /** A file on a session's disk. Folders carry empty contents. */
+    sessionFiles: defineTable({
+      sessionId: v.id("waSessions"),
+      path: v.string(),
+      contents: v.string(),
+      isDir: v.boolean(),
+      size: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_session", ["sessionId"])
+      .index("by_session_path", ["sessionId", "path"]),
+
+    /** An egg installed onto a session, with its install transcript. */
+    sessionInstalls: defineTable({
+      sessionId: v.id("waSessions"),
+      eggId: v.optional(v.id("eggs")),
+      eggName: v.string(),
+      runtime: v.string(),
+      startup: v.string(),
+      variables: v.optional(v.array(v.string())),
+      status: v.union(
+        v.literal("queued"),
+        v.literal("installing"),
+        v.literal("installed"),
+        v.literal("failed"),
+      ),
+      log: v.array(v.string()),
+      createdAt: v.number(),
+      completedAt: v.optional(v.number()),
+    })
+      .index("by_session", ["sessionId"])
+      .index("by_created", ["createdAt"]),
   },
   {
     schemaValidation: false,

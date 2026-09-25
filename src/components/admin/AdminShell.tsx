@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessagesSquare,
+  PackageOpen,
   Radio,
   Users,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { api } from "@/convex/_generated/api";
 const NAV = [
   { to: "/admin/overview", label: "Overview", icon: LayoutDashboard },
   { to: "/admin/catalog", label: "Catalog", icon: Boxes },
+  { to: "/admin/eggs", label: "Eggs", icon: PackageOpen },
   { to: "/admin/bookings", label: "Bookings", icon: CalendarClock },
   { to: "/admin/posts", label: "Posts", icon: MessagesSquare },
   { to: "/admin/inbox", label: "Inbox", icon: Radio },

@@ -6,6 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useInstallProgress } from "@/hooks/use-install";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { CheckCircle2, Loader2, PackageCheck, XCircle } from "lucide-react";
 import {
   usePanelActions,
   useRuntimeLoop,
@@ -26,6 +30,7 @@ import {
   Send,
   Terminal,
   Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -69,6 +74,36 @@ export default function Console() {
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+
+  // The install transcript, when the URL points at one (an egg install links
+  // here with ?install=). The id is resolved through the session's own install
+  // list, so it is always a real install on this session.
+  const installParam = params.get("install") ?? undefined;
+  const installs = useQuery(
+    api.eggs.listInstalls,
+    activeId ? { sessionId: activeId } : "skip",
+  );
+  const installRow = (installs ?? []).find((i) => i._id === installParam);
+  const install = useInstallProgress(installRow?._id);
+  const appendLog = useMutation(api.sessions.appendLog);
+  const installDone =
+    install?.status === "installed" || install?.status === "failed";
+
+  // Mirror the run into the session console once, so the transcript and the
+  // socket's own output end up in the same stream. A ref rather than state:
+  // this fires from a subscription, not from a render.
+  const seenInstall = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!install || !installDone || seenInstall.current === install._id) return;
+    seenInstall.current = install._id;
+    if (activeId) {
+      void appendLog({
+        sessionId: activeId,
+        level: install.status === "installed" ? "success" : "error",
+        message: `[wings] install ${install.status} — ${install.eggName}`,
+      });
+    }
+  }, [install, installDone, activeId, appendLog]);
 
   // Keep the newest line in view, the way a terminal does.
   useEffect(() => {
@@ -239,6 +274,83 @@ export default function Console() {
 
           {/* ---- Right: logs + composer ---- */}
           <div className="space-y-5 lg:col-span-2">
+            {installParam && (
+              <div className="slab overflow-hidden holo-border">
+                <div className="flex items-center gap-2 border-b border-border/70 px-4 py-2.5">
+                  <PackageCheck className="size-3.5 text-neon" />
+                  <span className="font-mono text-[11px] text-mist">
+                    install {install?.eggName ?? installParam}
+                  </span>
+                  <span
+                    className={cn(
+                      "ml-auto rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest",
+                      installDone
+                        ? install?.status === "installed"
+                          ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                          : "border-rose-400/40 bg-rose-400/10 text-rose-300"
+                        : "border-neon/40 bg-neon/10 text-neon",
+                    )}
+                  >
+                    {install?.status ?? (installRow ? "loading" : "unknown")}
+                  </span>
+                  <button
+                    type="button"
+                    title="Close transcript"
+                    onClick={() => {
+                      const next = new URLSearchParams(params);
+                      next.delete("install");
+                      setParams(next);
+                    }}
+                    className="rounded p-0.5 text-mist transition-colors hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+
+                {install ? (
+                  <div className="well m-3 h-[190px] overflow-y-auto p-4 font-mono text-[12px] leading-relaxed">
+                    <AnimatePresence initial={false}>
+                      {(install.log ?? []).map((line, i) => (
+                        <motion.div
+                          key={`${install._id}-${i}`}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="text-sky-200"
+                        >
+                          {line}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                    {!installDone && (
+                      <p className="mt-1 flex items-center gap-2 text-mist">
+                        <Loader2 className="size-3 animate-spin" />
+                        wings is running the install script…
+                      </p>
+                    )}
+                    {installDone && install.status === "installed" && (
+                      <p className="mt-1 flex items-center gap-2 text-emerald-300">
+                        <CheckCircle2 className="size-3" />
+                        installed — start it with{" "}
+                        <span className="text-neon">{install.startup}</span>
+                      </p>
+                    )}
+                    {installDone && install.status === "failed" && (
+                      <p className="mt-1 flex items-center gap-2 text-rose-300">
+                        <XCircle className="size-3" />
+                        install failed
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="px-4 py-6 text-center text-xs text-mist">
+                    {installRow
+                      ? "Loading the transcript…"
+                      : "No install with that id on this session."}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="slab overflow-hidden">
               <div className="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
                 <div className="flex items-center gap-2">

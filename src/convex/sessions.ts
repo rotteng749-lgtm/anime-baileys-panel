@@ -77,6 +77,42 @@ export const sessionLogs = query({
   },
 });
 
+/**
+ * Append one line to a session console.
+ *
+ * The wings runner reports back this way: the script is executed in the sandbox
+ * and the panel writes the outcome here, so a run shows up in the same stream as
+ * the socket's own logs.
+ */
+export const appendLog = mutation({
+  args: {
+    sessionId: v.id("waSessions"),
+    level: v.union(
+      v.literal("info"),
+      v.literal("success"),
+      v.literal("warn"),
+      v.literal("error"),
+      v.literal("debug"),
+      v.literal("command"),
+    ),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in to write to the console");
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("That session is not yours");
+    }
+    await ctx.db.insert("sessionLogs", {
+      sessionId: args.sessionId,
+      level: args.level,
+      message: args.message.slice(0, 500),
+      createdAt: Date.now(),
+    });
+  },
+});
+
 export const sessionMessages = query({
   args: {
     sessionId: v.id("waSessions"),

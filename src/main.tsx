@@ -14,11 +14,18 @@ const Landing = lazy(() => import("./pages/Landing.tsx"));
 const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Catalog = lazy(() => import("./pages/Catalog.tsx"));
 const CatalogItem = lazy(() => import("./pages/CatalogItem.tsx"));
+const Eggs = lazy(() => import("./pages/Eggs.tsx"));
+const EggDetail = lazy(() => import("./pages/EggDetail.tsx"));
+const EggPublish = lazy(() => import("./pages/EggPublish.tsx"));
+const Wings = lazy(() => import("./pages/Wings.tsx"));
+const Docs = lazy(() => import("./pages/Docs.tsx"));
 const Book = lazy(() => import("./pages/Book.tsx"));
 const Contact = lazy(() => import("./pages/Contact.tsx"));
 const PanelLayout = lazy(() => import("./components/panel/PanelLayout.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const Sessions = lazy(() => import("./pages/panel/Sessions.tsx"));
+const Files = lazy(() => import("./pages/panel/Files.tsx"));
+const WingsPanel = lazy(() => import("./pages/panel/Wings.tsx"));
 const Console = lazy(() => import("./pages/panel/Console.tsx"));
 const Messages = lazy(() => import("./pages/panel/Messages.tsx"));
 const Webhooks = lazy(() => import("./pages/panel/Webhooks.tsx"));
@@ -29,6 +36,7 @@ const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
 const AdminShell = lazy(() => import("./components/admin/AdminShell.tsx").then((m) => ({ default: m.AdminShell })));
 const AdminOverview = lazy(() => import("./pages/admin/AdminOverview.tsx"));
 const AdminCatalog = lazy(() => import("./pages/admin/AdminCatalog.tsx"));
+const AdminEggs = lazy(() => import("./pages/admin/AdminEggs.tsx"));
 const AdminBookings = lazy(() => import("./pages/admin/AdminBookings.tsx"));
 const AdminCommunity = lazy(() =>
   import("./pages/admin/AdminCommunity.tsx").then((m) => ({
@@ -155,6 +163,11 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/" element={<Landing />} />
               <Route path="/catalog" element={<Catalog />} />
               <Route path="/catalog/:slug" element={<CatalogItem />} />
+              <Route path="/eggs" element={<Eggs />} />
+              <Route path="/eggs/publish" element={<EggPublish />} />
+              <Route path="/eggs/:slug" element={<EggDetail />} />
+              <Route path="/wings" element={<Wings />} />
+              <Route path="/docs" element={<Docs />} />
               <Route path="/book" element={<Book />} />
               <Route path="/contact" element={<Contact />} />
               <Route
@@ -176,6 +189,8 @@ createRoot(document.getElementById("root")!).render(
               >
                 <Route index element={<Dashboard />} />
                 <Route path="sessions" element={<Sessions />} />
+                <Route path="files" element={<Files />} />
+                <Route path="wings" element={<WingsPanel />} />
                 <Route path="console" element={<Console />} />
                 <Route path="messages" element={<Messages />} />
                 <Route path="webhooks" element={<Webhooks />} />
@@ -189,6 +204,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/admin" element={<AdminShell />}>
                 <Route path="overview" element={<AdminOverview />} />
                 <Route path="catalog" element={<AdminCatalog />} />
+                <Route path="eggs" element={<AdminEggs />} />
                 <Route path="bookings" element={<AdminBookings />} />
                 <Route path="posts" element={<AdminCommunity />} />
                 <Route path="inbox" element={<AdminInbox />} />

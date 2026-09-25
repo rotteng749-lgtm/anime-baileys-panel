@@ -326,6 +326,59 @@ export const setInquiryRead = mutation({
 });
 
 /* ------------------------------------------------------------------ */
+/* Eggs                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Every egg with its file count, newest first — pending ones float up. */
+export const listAllEggs = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await getAdmin(ctx, args.token);
+    const eggs = await ctx.db.query("eggs").order("desc").collect();
+    const rows = [];
+    for (const egg of eggs) {
+      const files = await ctx.db
+        .query("eggFiles")
+        .withIndex("by_egg", (q) => q.eq("eggId", egg._id))
+        .collect();
+      rows.push({
+        ...egg,
+        fileCount: files.length,
+        bytes: files.reduce((n, f) => n + f.contents.length, 0),
+      });
+    }
+    return rows;
+  },
+});
+
+/** Approve a submitted egg, or send it back to draft. */
+export const setEggStatus = mutation({
+  args: {
+    token: v.string(),
+    id: v.id("eggs"),
+    status: v.union(v.literal("published"), v.literal("pending"), v.literal("draft")),
+  },
+  handler: async (ctx, args) => {
+    await getAdmin(ctx, args.token);
+    await ctx.db.patch(args.id, { status: args.status });
+  },
+});
+
+/** Withdraw an egg and every file it shipped. */
+export const removeEgg = mutation({
+  args: { token: v.string(), id: v.id("eggs") },
+  handler: async (ctx, args) => {
+    await getAdmin(ctx, args.token);
+    const files = await ctx.db
+      .query("eggFiles")
+      .withIndex("by_egg", (q) => q.eq("eggId", args.id))
+      .collect();
+    for (const file of files) await ctx.db.delete(file._id);
+    await ctx.db.delete(args.id);
+  },
+});
+
+/* ------------------------------------------------------------------ */
 /* Members                                                            */
 /* ------------------------------------------------------------------ */
 
