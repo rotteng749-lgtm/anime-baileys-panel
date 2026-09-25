@@ -4,6 +4,8 @@ import {
   Activity,
   Boxes,
   Cable,
+  CalendarClock,
+  FileStack,
   KeyRound,
   LogOut,
   MessagesSquare,
@@ -22,12 +24,14 @@ import { KaizenWordmark, SectionTag } from "@/components/Brand";
  */
 
 const NAV = [
-  { to: "/panel", label: "Overview", icon: Activity, end: true },
-  { to: "/panel/sessions", label: "Sessions", icon: Cable },
-  { to: "/panel/console", label: "Console", icon: Radio },
-  { to: "/panel/messages", label: "Messages", icon: MessagesSquare },
-  { to: "/panel/webhooks", label: "Webhooks", icon: Boxes },
-  { to: "/panel/keys", label: "API Keys", icon: KeyRound },
+  { to: "/dashboard", label: "Overview", icon: Activity, end: true },
+  { to: "/dashboard/sessions", label: "Sessions", icon: Cable },
+  { to: "/dashboard/console", label: "Console", icon: Radio },
+  { to: "/dashboard/messages", label: "Messages", icon: MessagesSquare },
+  { to: "/dashboard/webhooks", label: "Webhooks", icon: Boxes },
+  { to: "/dashboard/keys", label: "API Keys", icon: KeyRound },
+  { to: "/dashboard/posts", label: "Your posts", icon: FileStack },
+  { to: "/dashboard/bookings", label: "Bookings", icon: CalendarClock },
 ] as const;
 
 export function PanelShell({ children }: { children: React.ReactNode }) {
@@ -54,7 +58,7 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
           )}
         >
           <div className="flex items-center justify-between px-5 py-5">
-            <Link to="/panel" onClick={() => setOpen(false)}>
+            <Link to="/dashboard" onClick={() => setOpen(false)}>
               <KaizenWordmark />
             </Link>
             <button
@@ -160,7 +164,7 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
                 <Breadcrumbs path={location.pathname} />
               </div>
 
-              <SectionTag tone="neon" className="hidden sm:inline-flex">
+              <SectionTag tone="ember" className="hidden sm:inline-flex">
                 baileys 6.x
               </SectionTag>
             </div>
@@ -176,22 +180,23 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
 }
 
 const CRUMBS: Record<string, string> = {
-  panel: "Overview",
+  dashboard: "Overview",
   sessions: "Sessions",
   console: "Console",
   messages: "Messages",
   webhooks: "Webhooks",
   keys: "API Keys",
+  posts: "Your posts",
+  bookings: "Bookings",
 };
 
 function Breadcrumbs({ path }: { path: string }) {
   const parts = path.split("/").filter(Boolean);
-  const title = CRUMBS[parts[1] ?? "panel"] ?? "Overview";
+  const title = CRUMBS[parts[1] ?? "dashboard"] ?? "Overview";
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-mist">
-        Kaizen
-      </span>
+    <div className="flex min-w-0 items-center gap-2">          <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-mist">
+            Panel
+          </span>
       <span className="text-mist/60">/</span>
       <span className="truncate font-display text-sm font-bold tracking-wide">
         {title}

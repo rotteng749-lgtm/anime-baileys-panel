@@ -12,13 +12,35 @@ import "./index.css";
 // Lazy load route components for better code splitting
 const Landing = lazy(() => import("./pages/Landing.tsx"));
 const AuthPage = lazy(() => import("./pages/Auth.tsx"));
+const Catalog = lazy(() => import("./pages/Catalog.tsx"));
+const CatalogItem = lazy(() => import("./pages/CatalogItem.tsx"));
+const Book = lazy(() => import("./pages/Book.tsx"));
+const Contact = lazy(() => import("./pages/Contact.tsx"));
 const PanelLayout = lazy(() => import("./components/panel/PanelLayout.tsx"));
-const Overview = lazy(() => import("./pages/panel/Overview.tsx"));
+const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const Sessions = lazy(() => import("./pages/panel/Sessions.tsx"));
 const Console = lazy(() => import("./pages/panel/Console.tsx"));
 const Messages = lazy(() => import("./pages/panel/Messages.tsx"));
 const Webhooks = lazy(() => import("./pages/panel/Webhooks.tsx"));
 const Keys = lazy(() => import("./pages/panel/Keys.tsx"));
+const Posts = lazy(() => import("./pages/panel/Posts.tsx"));
+const MyBookings = lazy(() => import("./pages/panel/MyBookings.tsx"));
+const AdminLogin = lazy(() => import("./pages/admin/AdminLogin.tsx"));
+const AdminShell = lazy(() => import("./components/admin/AdminShell.tsx").then((m) => ({ default: m.AdminShell })));
+const AdminOverview = lazy(() => import("./pages/admin/AdminOverview.tsx"));
+const AdminCatalog = lazy(() => import("./pages/admin/AdminCatalog.tsx"));
+const AdminBookings = lazy(() => import("./pages/admin/AdminBookings.tsx"));
+const AdminCommunity = lazy(() =>
+  import("./pages/admin/AdminCommunity.tsx").then((m) => ({
+    default: m.AdminPosts,
+  })),
+);
+const AdminInbox = lazy(() =>
+  import("./pages/admin/AdminCommunity.tsx").then((m) => ({
+    default: m.AdminInbox,
+  })),
+);
+const AdminMembers = lazy(() => import("./pages/admin/AdminMembers.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -131,39 +153,48 @@ createRoot(document.getElementById("root")!).render(
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<Landing />} />
+              <Route path="/catalog" element={<Catalog />} />
+              <Route path="/catalog/:slug" element={<CatalogItem />} />
+              <Route path="/book" element={<Book />} />
+              <Route path="/contact" element={<Contact />} />
               <Route
                 path="/auth"
-                element={<AuthPage redirectAfterAuth="/panel" />}
+                element={<AuthPage redirectAfterAuth="/dashboard" />}
               />
+
+              {/* Member area */}
               <Route
-                path="/panel"
+                path="/dashboard"
                 element={
                   <RequireAuth
-                    title="Sign in to reach the console"
-                    description="The Kaizen panel runs your WhatsApp sessions. Sign in to provision devices and stream their sockets."
+                    title="Sign in to reach your panel"
+                    description="Your devices, posts and bookings live behind a sign-in. It takes one email code."
                   >
                     <PanelLayout />
                   </RequireAuth>
                 }
               >
-                <Route index element={<Overview />} />
+                <Route index element={<Dashboard />} />
                 <Route path="sessions" element={<Sessions />} />
                 <Route path="console" element={<Console />} />
                 <Route path="messages" element={<Messages />} />
                 <Route path="webhooks" element={<Webhooks />} />
                 <Route path="keys" element={<Keys />} />
+                <Route path="posts" element={<Posts />} />
+                <Route path="bookings" element={<MyBookings />} />
               </Route>
-              {/* Legacy entry point from the starter template. */}
-              <Route
-                path="/dashboard"
-                element={
-                  <RequireAuth>
-                    <PanelLayout />
-                  </RequireAuth>
-                }
-              >
-                <Route index element={<Overview />} />
+
+              {/* Admin area — its own door, its own credentials */}
+              <Route path="/admin" element={<AdminLogin />} />
+              <Route path="/admin" element={<AdminShell />}>
+                <Route path="overview" element={<AdminOverview />} />
+                <Route path="catalog" element={<AdminCatalog />} />
+                <Route path="bookings" element={<AdminBookings />} />
+                <Route path="posts" element={<AdminCommunity />} />
+                <Route path="inbox" element={<AdminInbox />} />
+                <Route path="members" element={<AdminMembers />} />
               </Route>
+
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>

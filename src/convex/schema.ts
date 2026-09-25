@@ -59,6 +59,37 @@ export const WEBHOOK_EVENTS = [
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
+/** Sections of the public catalog. */
+export const CATALOG_CATEGORIES = [
+  "Blast",
+  "Auto-reply",
+  "Commerce",
+  "Developer",
+  "Devices",
+] as const;
+export type CatalogCategory = (typeof CATALOG_CATEGORIES)[number];
+
+/** Accent ramps a catalog card can be drawn in. */
+export const ACCENTS = ["neon", "holo", "sakura", "ember"] as const;
+export type Accent = (typeof ACCENTS)[number];
+
+/** What a community post is. */
+export const POST_KINDS = [
+  "template",
+  "snippet",
+  "bot",
+  "guide",
+] as const;
+export type PostKind = (typeof POST_KINDS)[number];
+
+/** Booking lifecycle. */
+export const BOOKING_STATUSES = [
+  "pending",
+  "confirmed",
+  "cancelled",
+] as const;
+export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -188,6 +219,120 @@ const schema = defineSchema(
       lastUsedAt: v.optional(v.number()),
       createdAt: v.number(),
     }).index("by_owner", ["ownerId"]),
+
+    // ------------------------------------------------------------------
+    // Public catalog — the WangSAP-style service library
+    // ------------------------------------------------------------------
+
+    catalogItems: defineTable({
+      slug: v.string(),
+      title: v.string(),
+      tagline: v.string(),
+      summary: v.string(),
+      body: v.string(),
+      category: v.string(),
+      tags: v.array(v.string()),
+      priceLabel: v.string(),
+      /** Accent used on the card, matched to the theme's ramps. */
+      accent: v.union(
+        v.literal("neon"),
+        v.literal("holo"),
+        v.literal("sakura"),
+        v.literal("ember"),
+      ),
+      authorName: v.string(),
+      authorId: v.optional(v.id("users")),
+      installs: v.number(),
+      rating: v.number(),
+      featured: v.boolean(),
+      status: v.union(v.literal("published"), v.literal("draft")),
+      createdAt: v.number(),
+    })
+      .index("by_slug", ["slug"])
+      .index("by_category", ["category"])
+      .index("by_created", ["createdAt"]),
+
+    catalogComments: defineTable({
+      itemId: v.id("catalogItems"),
+      authorId: v.optional(v.id("users")),
+      authorName: v.string(),
+      body: v.string(),
+      createdAt: v.number(),
+    }).index("by_item", ["itemId"]),
+
+    // ------------------------------------------------------------------
+    // Community — what people post
+    // ------------------------------------------------------------------
+
+    communityPosts: defineTable({
+      authorId: v.id("users"),
+      authorName: v.string(),
+      title: v.string(),
+      body: v.string(),
+      kind: v.union(
+        v.literal("template"),
+        v.literal("snippet"),
+        v.literal("bot"),
+        v.literal("guide"),
+      ),
+      link: v.optional(v.string()),
+      /** Optional catalog entry this post refers to. */
+      itemSlug: v.optional(v.string()),
+      createdAt: v.number(),
+    })
+      .index("by_author", ["authorId"])
+      .index("by_created", ["createdAt"]),
+
+    // ------------------------------------------------------------------
+    // Bookings and direct messages to the operator
+    // ------------------------------------------------------------------
+
+    bookings: defineTable({
+      userId: v.optional(v.id("users")),
+      name: v.string(),
+      email: v.string(),
+      /** ISO date, e.g. "2026-03-18". */
+      date: v.string(),
+      slot: v.string(),
+      topic: v.string(),
+      notes: v.optional(v.string()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("confirmed"),
+        v.literal("cancelled"),
+      ),
+      createdAt: v.number(),
+    })
+      .index("by_date", ["date"])
+      .index("by_user", ["userId"]),
+
+    inquiries: defineTable({
+      name: v.string(),
+      email: v.string(),
+      subject: v.string(),
+      message: v.string(),
+      read: v.boolean(),
+      createdAt: v.number(),
+    }).index("by_created", ["createdAt"]),
+
+    // ------------------------------------------------------------------
+    // Admin — username + password, separate from member accounts
+    // ------------------------------------------------------------------
+
+    adminAccounts: defineTable({
+      username: v.string(),
+      passwordHash: v.string(),
+      salt: v.string(),
+      label: v.string(),
+      createdAt: v.number(),
+    }).index("by_username", ["username"]),
+
+    adminSessions: defineTable({
+      tokenHash: v.string(),
+      label: v.string(),
+      expiresAt: v.number(),
+      createdAt: v.number(),
+    }).index("by_token", ["tokenHash"]),
   },
   {
     schemaValidation: false,

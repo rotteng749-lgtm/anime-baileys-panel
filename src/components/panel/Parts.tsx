@@ -14,13 +14,14 @@ export function StatTile({
   value: string | number;
   hint?: string;
   icon?: LucideIcon;
-  tone?: "neon" | "holo" | "sakura" | "mint";
+  tone?: "neon" | "holo" | "sakura" | "mint" | "ember";
 }) {
   const glows = {
     neon: "from-neon/25",
     holo: "from-holo/25",
     sakura: "from-sakura/25",
     mint: "from-emerald-400/25",
+    ember: "from-ember/25",
   };
   return (
     <div className="slab group relative overflow-hidden p-5">

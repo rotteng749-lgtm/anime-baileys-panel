@@ -39,7 +39,7 @@ export default function NotFound() {
             </Link>
           </Button>
           <Button size="lg" variant="outline" asChild>
-            <Link to="/panel/console">
+            <Link to="/dashboard/console">
               <Terminal className="size-4" />
               Open console
             </Link>

@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils";
 import type { SessionStatus } from "@/convex/schema";
 
 /**
- * The Kaizen mark — a stylised shuriken/socket glyph rendered as extruded
- * layers so it reads as a physical emblem rather than a flat icon.
+ * The panel mark — a crescent sigil over a socket, rendered as an extruded
+ * plate so it reads as a physical emblem rather than a flat icon.
  */
 export function KaizenMark({
   className,
@@ -27,12 +27,15 @@ export function KaizenMark({
         }}
       />
       <span className="absolute inset-0 flex items-center justify-center">
-        <svg viewBox="0 0 24 24" width={size * 0.58} height={size * 0.58}>
+        <svg viewBox="0 0 24 24" width={size * 0.6} height={size * 0.6}>
+          {/* crescent */}
           <path
-            d="M12 2.6 14.1 9 20.4 6.4 16.6 11.6 22 14.4 14.6 14.9 14.3 21.4 11.4 15.6 5.6 18.8 8.8 12.9 3.2 10.6 10.2 10.4 8.4 3.1Z"
+            d="M14.6 3.4a8.4 8.4 0 1 0 0 17.2 9.6 9.6 0 0 1 0-17.2Z"
             fill="oklch(0.16 0.05 264)"
-            opacity="0.92"
+            opacity="0.9"
           />
+          {/* ember spark at the crescent's tip */}
+          <circle cx="18.4" cy="5.6" r="1.5" fill="oklch(0.78 0.18 55)" />
         </svg>
       </span>
     </span>
@@ -52,15 +55,15 @@ export function KaizenWordmark({
       <span className="flex flex-col leading-none">
         <span
           className={cn(
-            "font-display font-bold tracking-[0.14em] gradient-text",
-            compact ? "text-base" : "text-lg",
+            "font-display font-bold tracking-[0.1em] gradient-text",
+            compact ? "text-sm" : "text-base",
           )}
         >
-          KAIZEN
+          ANIME BAILEYS
         </span>
         {!compact && (
-          <span className="mt-0.5 text-[9px] font-medium tracking-[0.34em] text-mist">
-            BAILEYS PANEL
+          <span className="mt-1 text-[9px] font-semibold uppercase tracking-[0.42em] text-ember">
+            Panel
           </span>
         )}
       </span>
@@ -83,6 +86,13 @@ export const STATUS_META: Record<
     ring: "border-emerald-400/40 bg-emerald-400/10",
     glow: "shadow-[0_0_14px_-2px_oklch(0.8_0.17_155/70%)]",
   },
+  conflict: {
+    label: "Conflict",
+    dot: "bg-rose-400",
+    text: "text-rose-200",
+    ring: "border-rose-400/40 bg-rose-400/10",
+    glow: "shadow-[0_0_14px_-2px_oklch(0.7_0.2_20/70%)]",
+  },
   connecting: {
     label: "Connecting",
     dot: "bg-sky-300 animate-pulse",
@@ -103,13 +113,6 @@ export const STATUS_META: Record<
     text: "text-slate-300",
     ring: "border-slate-400/35 bg-slate-400/10",
     glow: "",
-  },
-  conflict: {
-    label: "Conflict",
-    dot: "bg-rose-400",
-    text: "text-rose-200",
-    ring: "border-rose-400/40 bg-rose-400/10",
-    glow: "shadow-[0_0_14px_-2px_oklch(0.7_0.2_20/70%)]",
   },
 };
 
@@ -145,12 +148,14 @@ export function SectionTag({
 }: {
   children: React.ReactNode;
   className?: string;
-  tone?: "neon" | "holo" | "sakura";
+  tone?: "neon" | "holo" | "sakura" | "ember" | "ash";
 }) {
   const tones = {
     neon: "text-neon/90 border-neon/30 bg-neon/8",
     holo: "text-holo/90 border-holo/30 bg-holo/8",
     sakura: "text-sakura/90 border-sakura/30 bg-sakura/8",
+    ember: "text-ember/90 border-ember/30 bg-ember/8",
+    ash: "text-ash border-ash/30 bg-ash/8",
   };
   return (
     <span

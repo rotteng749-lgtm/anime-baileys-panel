@@ -15,10 +15,10 @@ import {
 } from "@/components/ui/input-otp";
 
 import { useAuth } from "@/hooks/use-auth";
-import logo from "@/assets/logo.svg";
+import { KaizenMark } from "@/components/Brand";
 import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate, useSearchParams, Link } from "react-router";
 
 interface AuthProps {
   redirectAfterAuth?: string;
@@ -110,29 +110,29 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="relative min-h-screen">
+      <div className="anime-grid pointer-events-none absolute inset-0 opacity-60" />
+      <div className="ash-mist pointer-events-none absolute inset-0" />
 
-      
-      {/* Auth Content */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex items-center justify-center h-full flex-col">
-        <Card className="min-w-[350px] pb-0 border shadow-md">
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-5 py-12">
+        <Card className="app-frame w-full max-w-md border p-0 pb-0">
           {step === "signIn" ? (
             <>
               <CardHeader className="text-center">
               <div className="flex justify-center">
-                    <img
-                      src={logo}
-                      alt="Lock Icon"
-                      width={64}
-                      height={64}
-                      className="rounded-lg mb-4 mt-4 cursor-pointer"
+                    <div
+                      className="sigil mb-4 mt-2 size-20 cursor-pointer"
                       onClick={() => navigate("/")}
-                    />
+                    >
+                      <KaizenMark size={44} />
+                    </div>
                   </div>
-                <CardTitle className="text-xl">Get Started</CardTitle>
+                <CardTitle className="font-display text-2xl font-bold">
+                  Sign in or create an account
+                </CardTitle>
                 <CardDescription>
-                  Enter your email to log in or sign up
+                  One email, one code. Your devices, posts and bookings all
+                  live behind this door.
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
@@ -196,9 +196,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           ) : (
             <>
               <CardHeader className="text-center mt-4">
-                <CardTitle>Check your email</CardTitle>
+                <CardTitle className="font-display text-xl font-bold">
+                  Check your email
+                </CardTitle>
                 <CardDescription>
-                  We've sent a code to {step.email}
+                  We sent a six-digit code to {step.email}
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleOtpSubmit}>
@@ -235,13 +237,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     </p>
                   )}
                   <p className="text-sm text-muted-foreground text-center mt-4">
-                    Didn't receive a code?{" "}
+                    No code arrived?{" "}
                     <Button
                       variant="link"
-                      className="p-0 h-auto"
+                      className="h-auto p-0 text-neon"
                       onClick={() => setStep("signIn")}
                     >
-                      Try again
+                      Send another
                     </Button>
                   </p>
                 </CardContent>
@@ -253,8 +255,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying...
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />                          Verifying…
                       </>
                     ) : (
                       <>
@@ -270,26 +271,22 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     disabled={isLoading}
                     className="w-full"
                   >
-                    Use different email
+                    Use a different email
                   </Button>
                 </CardFooter>
               </form>
             </>
           )}
 
-          <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-            Secured by{" "}
-            <a
-              href="https://freebuff.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-primary transition-colors"
+          <div className="rounded-b-lg border-t bg-abyss/50 px-6 py-4 text-center text-xs text-muted-foreground">
+            <Link
+              to="/"
+              className="font-semibold text-neon transition-colors hover:text-ember"
             >
-              freebuff.com
-            </a>
+              ← Back to Anime Baileys Panel
+            </Link>
           </div>
         </Card>
-        </div>
       </div>
     </div>
   );

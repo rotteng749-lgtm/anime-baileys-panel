@@ -96,6 +96,25 @@ export function useRuntimeLoop(
   }, [tick, sample, inbound]);
 }
 
+/**
+ * Make sure the public catalog has its starter entries.
+ *
+ * On a fresh install the catalog is empty, which makes the browse page look
+ * broken rather than new. Seeding is idempotent — it only adds slugs that are
+ * missing — so this is safe to call on every public view.
+ */
+export function useStarterCatalog(count: number | undefined) {
+  const seed = useMutation(api.catalog.seedCatalog);
+  const seeded = useRef(false);
+
+  useEffect(() => {
+    if (seeded.current) return;
+    if (count === undefined || count > 0) return;
+    seeded.current = true;
+    void seed({});
+  }, [count, seed]);
+}
+
 /** Every mutation the panel needs, in one place. */
 export function usePanelActions() {
   return {
