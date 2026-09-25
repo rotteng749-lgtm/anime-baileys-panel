@@ -1,0 +1,443 @@
+/* DO NOT CHANGE */
+@import "tailwindcss";
+@import "tw-animate-css";
+@custom-variant dark (&:is(.dark *));
+
+/* DO NOT CHANGE */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ---- Kaizen theme extensions ---- */
+  --color-abyss: var(--abyss);
+  --color-abyss-foreground: var(--abyss-foreground);
+  --color-neon: var(--neon);
+  --color-neon-foreground: var(--neon-foreground);
+  --color-holo: var(--holo);
+  --color-holo-foreground: var(--holo-foreground);
+  --color-sakura: var(--sakura);
+  --color-sakura-foreground: var(--sakura-foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
+  --color-mist: var(--mist);
+
+  --font-display: "Chakra Petch", "Zen Kaku Gothic New", ui-sans-serif, system-ui,
+    sans-serif;
+  --font-sans: "Zen Kaku Gothic New", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* CHANGE VALUES FOR THEME */
+:root {
+  --radius: 0.75rem;
+  color-scheme: dark;
+
+  /* Deep abyssal navy base */
+  --background: oklch(0.19 0.055 262);
+  --foreground: oklch(0.96 0.015 240);
+  --card: oklch(0.235 0.06 261);
+  --card-foreground: oklch(0.96 0.015 240);
+  --popover: oklch(0.215 0.058 261);
+  --popover-foreground: oklch(0.96 0.015 240);
+  --primary: oklch(0.74 0.15 225);
+  --primary-foreground: oklch(0.17 0.05 262);
+  --secondary: oklch(0.3 0.07 258);
+  --secondary-foreground: oklch(0.96 0.015 240);
+  --muted: oklch(0.28 0.05 260);
+  --muted-foreground: oklch(0.74 0.035 250);
+  --accent: oklch(0.34 0.1 300);
+  --accent-foreground: oklch(0.97 0.01 240);
+  --destructive: oklch(0.64 0.21 18);
+  --border: oklch(0.42 0.06 258 / 45%);
+  --input: oklch(0.5 0.06 258 / 35%);
+  --ring: oklch(0.78 0.14 225);
+  --chart-1: oklch(0.74 0.15 225);
+  --chart-2: oklch(0.7 0.17 300);
+  --chart-3: oklch(0.72 0.16 175);
+  --chart-4: oklch(0.78 0.14 65);
+  --chart-5: oklch(0.68 0.2 20);
+  --sidebar: oklch(0.16 0.05 263);
+  --sidebar-foreground: oklch(0.92 0.02 245);
+  --sidebar-primary: oklch(0.74 0.15 225);
+  --sidebar-primary-foreground: oklch(0.17 0.05 262);
+  --sidebar-accent: oklch(0.28 0.06 258);
+  --sidebar-accent-foreground: oklch(0.97 0.01 240);
+  --sidebar-border: oklch(0.45 0.06 258 / 35%);
+  --sidebar-ring: oklch(0.78 0.14 225);
+
+  /* Extended palette */
+  --abyss: oklch(0.135 0.045 264);
+  --abyss-foreground: oklch(0.9 0.03 245);
+  --neon: oklch(0.8 0.16 200);
+  --neon-foreground: oklch(0.15 0.04 262);
+  --holo: oklch(0.68 0.19 300);
+  --holo-foreground: oklch(0.16 0.05 262);
+  --sakura: oklch(0.76 0.15 350);
+  --sakura-foreground: oklch(0.16 0.05 262);
+  --surface: oklch(0.245 0.058 260);
+  --surface-2: oklch(0.285 0.06 258);
+  --surface-3: oklch(0.33 0.062 256);
+  --edge: oklch(0.55 0.07 255 / 40%);
+  --edge-strong: oklch(0.72 0.11 240 / 65%);
+  --mist: oklch(0.8 0.03 245 / 55%);
+}
+
+.dark {
+  --background: oklch(0.19 0.055 262);
+  --foreground: oklch(0.96 0.015 240);
+  --card: oklch(0.235 0.06 261);
+  --card-foreground: oklch(0.96 0.015 240);
+  --popover: oklch(0.215 0.058 261);
+  --popover-foreground: oklch(0.96 0.015 240);
+  --primary: oklch(0.74 0.15 225);
+  --primary-foreground: oklch(0.17 0.05 262);
+  --secondary: oklch(0.3 0.07 258);
+  --secondary-foreground: oklch(0.96 0.015 240);
+  --muted: oklch(0.28 0.05 260);
+  --muted-foreground: oklch(0.74 0.035 250);
+  --accent: oklch(0.34 0.1 300);
+  --accent-foreground: oklch(0.97 0.01 240);
+  --destructive: oklch(0.64 0.21 18);
+  --border: oklch(0.42 0.06 258 / 45%);
+  --input: oklch(0.5 0.06 258 / 35%);
+  --ring: oklch(0.78 0.14 225);
+  --chart-1: oklch(0.74 0.15 225);
+  --chart-2: oklch(0.7 0.17 300);
+  --chart-3: oklch(0.72 0.16 175);
+  --chart-4: oklch(0.78 0.14 65);
+  --chart-5: oklch(0.68 0.2 20);
+  --sidebar: oklch(0.16 0.05 263);
+  --sidebar-foreground: oklch(0.92 0.02 245);
+  --sidebar-primary: oklch(0.74 0.15 225);
+  --sidebar-primary-foreground: oklch(0.17 0.05 262);
+  --sidebar-accent: oklch(0.28 0.06 258);
+  --sidebar-accent-foreground: oklch(0.97 0.01 240);
+  --sidebar-border: oklch(0.45 0.06 258 / 35%);
+  --sidebar-ring: oklch(0.78 0.14 225);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(
+        1100px 620px at 12% -8%,
+        oklch(0.42 0.12 250 / 0.32),
+        transparent 62%
+      ),
+      radial-gradient(
+        900px 560px at 92% 4%,
+        oklch(0.42 0.15 300 / 0.26),
+        transparent 60%
+      ),
+      radial-gradient(
+        1000px 700px at 50% 108%,
+        oklch(0.36 0.12 215 / 0.26),
+        transparent 62%
+      ),
+      linear-gradient(180deg, oklch(0.17 0.05 264), oklch(0.13 0.04 266));
+    background-attachment: fixed;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight;
+  }
+  code,
+  kbd,
+  pre {
+    @apply font-mono;
+  }
+  button:not([disabled]),
+  [role="button"]:not([disabled]) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: oklch(0.74 0.15 225 / 0.32);
+  }
+  /* Scrollbars tuned to the theme */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.5 0.08 250 / 0.6) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+      180deg,
+      oklch(0.6 0.12 235 / 0.7),
+      oklch(0.5 0.15 290 / 0.7)
+    );
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* ---- 3D primitives -------------------------------------------------- */
+
+  /* Extruded slab: a hard top highlight, a lit upper edge and a deep cast
+     shadow, so panels read as physical objects sitting over the backdrop. */
+  .slab {
+    position: relative;
+    border-radius: var(--radius-xl);
+    background:
+      linear-gradient(
+        180deg,
+        oklch(1 0 0 / 7%) 0%,
+        oklch(1 0 0 / 2%) 22%,
+        oklch(0 0 0 / 14%) 100%
+      ),
+      linear-gradient(180deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    box-shadow:
+      inset 0 1px 0 0 oklch(1 0 0 / 12%),
+      inset 0 -1px 0 0 oklch(0 0 0 / 45%),
+      0 1px 2px oklch(0 0 0 / 35%),
+      0 18px 38px -22px oklch(0 0 0 / 85%),
+      0 0 0 1px oklch(0.5 0.08 250 / 8%);
+  }
+
+  /* Recessed well — the inverse of .slab, used for console/log panes. */
+  .well {
+    border-radius: var(--radius-lg);
+    background:
+      linear-gradient(
+        180deg,
+        oklch(0 0 0 / 35%),
+        oklch(0 0 0 / 12%) 40%,
+        oklch(1 0 0 / 3%)
+      ),
+      linear-gradient(180deg, oklch(0.17 0.045 265), oklch(0.2 0.05 262));
+    border: 1px solid oklch(0.35 0.06 258 / 60%);
+    box-shadow:
+      inset 0 2px 8px oklch(0 0 0 / 60%),
+      0 1px 0 0 oklch(1 0 0 / 6%);
+  }
+
+  /* Holographic gradient border, painted via border-box + padding-box so it
+     is not hidden behind the element's own background. */
+  .holo-border {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(180deg, var(--surface), var(--surface-2)) padding-box,
+      linear-gradient(
+        140deg,
+        oklch(0.82 0.15 200 / 0.9),
+        oklch(0.6 0.19 300 / 0.55) 45%,
+        oklch(0.78 0.15 350 / 0.7)
+      )
+        border-box;
+  }
+
+  /* Chunky anime button face: solid top plate + extruded bottom edge. */
+  .btn-3d {
+    position: relative;
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--surface-3), var(--surface));
+    border: 1px solid var(--edge);
+    box-shadow:
+      inset 0 1px 0 0 oklch(1 0 0 / 18%),
+      0 3px 0 0 oklch(0.16 0.05 264),
+      0 8px 16px -8px oklch(0 0 0 / 70%);
+    transition:
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 140ms ease,
+      filter 140ms ease;
+  }
+  .btn-3d:hover {
+    filter: brightness(1.12);
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 0 oklch(1 0 0 / 24%),
+      0 4px 0 0 oklch(0.16 0.05 264),
+      0 14px 22px -10px oklch(0.6 0.15 230 / 0.55);
+  }
+  .btn-3d:active {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 2px 6px oklch(0 0 0 / 45%),
+      0 1px 0 0 oklch(0.16 0.05 264);
+  }
+
+  /* Panel / app-frame surface with an inner neon rim. */
+  .app-frame {
+    background:
+      linear-gradient(
+        180deg,
+        oklch(1 0 0 / 6%) 0%,
+        oklch(1 0 0 / 1%) 18%,
+        oklch(0 0 0 / 16%) 100%
+      ),
+      linear-gradient(180deg, var(--surface), var(--abyss));
+    border: 1px solid var(--border);
+    box-shadow:
+      inset 0 1px 0 0 oklch(1 0 0 / 14%),
+      inset 0 0 60px -30px oklch(0.7 0.16 240 / 0.6),
+      0 30px 60px -40px oklch(0 0 0 / 90%);
+  }
+
+  /* Perspective grid floor for hero/backdrop sections. */
+  .anime-grid {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    mask-image: linear-gradient(180deg, transparent, #000 35%, #000 70%, transparent);
+  }
+  .anime-grid::before {
+    content: "";
+    position: absolute;
+    inset: -40% -10% -60%;
+    background-image:
+      linear-gradient(oklch(0.7 0.15 225 / 22%) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.7 0.15 225 / 22%) 1px, transparent 1px);
+    background-size: 56px 56px;
+    transform: perspective(520px) rotateX(64deg);
+    transform-origin: top center;
+    animation: grid-drift 14s linear infinite;
+  }
+  @keyframes grid-drift {
+    to {
+      background-position:
+        0 56px,
+        56px 0;
+    }
+  }
+
+  /* Fine scanline / screentone overlay for anime "cel" texture. */
+  .screentone {
+    background-image: radial-gradient(
+      oklch(0.8 0.1 240 / 14%) 1px,
+      transparent 1.4px
+    );
+    background-size: 6px 6px;
+  }
+
+  .glow-neon {
+    box-shadow:
+      0 0 0 1px oklch(0.8 0.15 200 / 35%),
+      0 0 18px -2px oklch(0.8 0.15 200 / 45%),
+      0 0 46px -12px oklch(0.7 0.18 280 / 55%);
+  }
+
+  .text-glow {
+    text-shadow:
+      0 0 18px oklch(0.8 0.15 220 / 45%),
+      0 0 42px oklch(0.65 0.18 300 / 30%);
+  }
+
+  .gradient-text {
+    background: linear-gradient(
+      100deg,
+      oklch(0.95 0.03 220) 0%,
+      oklch(0.8 0.15 210) 35%,
+      oklch(0.72 0.18 300) 70%,
+      oklch(0.8 0.15 350) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Slanted "shuriken" clip used on primary CTAs and section labels. */
+  .clip-shuriken {
+    clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  }
+
+  .float-slow {
+    animation: float-slow 7s ease-in-out infinite;
+  }
+  @keyframes float-slow {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-12px);
+    }
+  }
+
+  .pulse-ring {
+    animation: pulse-ring 2.2s ease-out infinite;
+  }
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 oklch(0.8 0.16 200 / 55%);
+    }
+    70% {
+      box-shadow: 0 0 0 10px oklch(0.8 0.16 200 / 0%);
+    }
+    100% {
+      box-shadow: 0 0 0 0 oklch(0.8 0.16 200 / 0%);
+    }
+  }
+
+  .rail {
+    background: linear-gradient(
+      180deg,
+      oklch(0.2 0.05 262) 0%,
+      oklch(0.16 0.05 264) 100%
+    );
+    border-right: 1px solid var(--border);
+    box-shadow:
+      inset -1px 0 0 0 oklch(1 0 0 / 5%),
+      18px 0 40px -30px oklch(0 0 0 / 90%);
+  }
+
+  .stat-chip {
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, oklch(1 0 0 / 6%), oklch(0 0 0 / 12%));
+    border: 1px solid var(--border);
+    box-shadow: inset 0 1px 0 0 oklch(1 0 0 / 10%);
+  }
+}
