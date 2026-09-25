@@ -2,17 +2,25 @@ import { StatusPill } from "@/components/Brand";
 import { NewSessionForm } from "@/components/panel/NewSessionForm";
 import { CpuMeter, EmptyState, MemMeter } from "@/components/panel/Parts";
 import { PageHead } from "@/components/panel/Shell";
+import { PowerBar } from "@/components/panel/PowerBar";
 import { Button } from "@/components/ui/button";
 import { usePanelActions, useRuntimeLoop, useSessions } from "@/hooks/use-panel";
 import { motion } from "framer-motion";
-import { Cable, ExternalLink, Power, Smartphone, Trash2 } from "lucide-react";
+import {
+  Cable,
+  ExternalLink,
+  FolderTree,
+  Server,
+  Smartphone,
+  Trash2,
+} from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export default function Sessions() {
   const sessions = useSessions();
-  const { startPairing, disconnect, deleteSession } = usePanelActions();
+  const { startPairing, deleteSession } = usePanelActions();
   useRuntimeLoop(sessions);
 
   const list = sessions ?? [];
@@ -21,8 +29,8 @@ export default function Sessions() {
     <div>
       <PageHead
         eyebrow="Fleet"
-        title="Sessions"
-        description="One entry per linked number. Each holds its own creds, socket state and console stream."
+        title="Servers"
+        description="One entry per linked number. Each is a server: its own uuid, allocation, resource limits, creds and console."
         actions={<NewSessionForm />}
       />
 
@@ -30,7 +38,7 @@ export default function Sessions() {
         <EmptyState
           icon={Smartphone}
           title="The fleet is empty"
-          description="Provision your first session to open a Baileys socket and pair a WhatsApp device."
+          description="Create your first server to claim an allocation and open a Baileys socket."
           action={<NewSessionForm />}
         />
       ) : (
@@ -53,6 +61,26 @@ export default function Sessions() {
                   </p>
                 </div>
                 <StatusPill status={session.status} />
+              </div>
+
+              {/* The server object, the fields a hosting panel always shows. */}
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-mist">
+                <span title="Server uuid">
+                  <Server className="mr-1 inline size-3" />
+                  {session.uuidShort ?? "—"}
+                </span>
+                {session.memory !== undefined && (
+                  <span title="Memory limit">mem {session.memory} MB</span>
+                )}
+                {session.disk !== undefined && (
+                  <span title="Disk limit">disk {session.disk} MB</span>
+                )}
+                {session.cpuMilli !== undefined && (
+                  <span title="CPU limit">cpu {session.cpuMilli}m</span>
+                )}
+                {session.installState && (
+                  <span title="Install state">{session.installState}</span>
+                )}
               </div>
 
               <div className="mt-4 space-y-2.5">
@@ -81,26 +109,28 @@ export default function Sessions() {
                 ))}
               </dl>
 
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-border/60 pt-4">
+              <div className="mt-4 border-t border-border/60 pt-4">
+                <PowerBar
+                  sessionId={session._id}
+                  power={session.power}
+                  disabled={session.suspended}
+                />
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button size="sm" asChild>
-                  <Link to={`/panel/console?session=${session._id}`}>
+                  <Link to={`/dashboard/console?session=${session._id}`}>
                     <ExternalLink className="size-3" />
                     Console
                   </Link>
                 </Button>
-                {session.status === "connected" ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void disconnect({ sessionId: session._id });
-                      toast.success("Socket stopped");
-                    }}
-                  >
-                    <Power className="size-3" />
-                    Stop
-                  </Button>
-                ) : (
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={`/dashboard/files?session=${session._id}`}>
+                    <FolderTree className="size-3" />
+                    Files
+                  </Link>
+                </Button>
+                {session.status !== "connected" && (
                   <Button
                     size="sm"
                     variant="outline"

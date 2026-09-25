@@ -8,11 +8,14 @@ import {
   Cable,
   Cpu,
   FileCode,
+  FolderTree,
   KeyRound,
+  Layers,
   Radio,
   Search,
   Terminal,
   Webhook,
+  Zap,
 } from "lucide-react";
 import { Link } from "react-router";
 import { motion } from "framer-motion";
@@ -51,14 +54,62 @@ export default function Docs() {
 
   const sections: Section[] = [
     {
-      id: "sessions",
-      label: "Sessions",
-      icon: Cable,
-      blurb: "A session is one linked device and the socket that holds it.",
+      id: "concepts",
+      label: "The concepts",
+      icon: Layers,
+      blurb: "Nest, egg, node, allocation — and why each one exists.",
       body: [
         {
           kind: "p",
-          text: "Everything in the panel hangs off a session. Create one from the panel, pair your phone to it, and from then on the session is the thing that owns the WhatsApp connection, the files on disk and the console you watch.",
+          text: "The panel is two halves, and so is this one. The panel is what you look at: accounts, servers, files, console. Wings is the agent that runs on a machine and actually holds the socket. Everything below is one of the five ideas that split between them.",
+        },
+        {
+          kind: "table",
+          head: ["Concept", "What it is"],
+          rows: [
+            ["Nest", "The big category: WhatsApp bots, commerce, community, developer, media. The first thing you pick."],
+            ["Egg", "A template inside a nest — an image, a startup command, env vars, an install script and the files it ships."],
+            ["Node", "One machine running wings. It has a token, a location and a total of CPU, memory and disk."],
+            ["Allocation", "A reserved ip:port on a node. One server takes one; the rest of the range stays free."],
+            ["Server", "The row that ties them together: uuid, owner, node, allocation, nest, egg and its limits."],
+          ],
+        },
+        {
+          kind: "p",
+          text: "The order you meet them in: pick a nest, pick an egg off the shelf, pick a node with room, claim an allocation on it, give the server its limits. The panel writes the row, then asks wings to act — over HTTPS, with the node's bearer token.",
+        },
+        {
+          kind: "code",
+          lang: "bash",
+          lines: [
+            "# what a node does, in the panel's own words",
+            "curl -X POST https://your-panel/api/servers \\",
+            '  -H "Authorization: Bearer <wings token>" \\',
+            '  -d \'{"name":"bot-1","owner_id":"…","limits":{"memory":512,"disk":2048,"cpu":500}}\'',
+          ],
+        },
+      ],
+    },
+    {
+      id: "servers",
+      label: "Servers",
+      icon: Cable,
+      blurb: "A server is one linked number, its uuid, its allocation and its limits.",
+      body: [
+        {
+          kind: "p",
+          text: "Everything in the panel hangs off a server. Create one, and it claims a free ip:port on a node, gets a uuid, and picks up default limits. From then on it owns the WhatsApp connection, the files on its disk and the console you watch.",
+        },
+        {
+          kind: "table",
+          head: ["Field", "Meaning"],
+          rows: [
+            ["uuid / uuid_short", "The stable id wings addresses the volume by. The short form is what the panel shows."],
+            ["node / allocation", "Which machine it runs on, and which ip:port it answers on."],
+            ["memory, disk, cpu, io", "Limits, in MB and millicores. What the meters are read against."],
+            ["startup, image", "The command wings runs, and the runtime image it runs against."],
+            ["power", "running or stopped. The four verbs below change it."],
+          ],
         },
         {
           kind: "table",
@@ -72,13 +123,44 @@ export default function Docs() {
           ],
         },
         {
+          kind: "note",
+          tone: "neon",
+          text: "Pairing takes one of two routes. QR is the default: the panel renders the matrix and your phone scans it. The eight-digit code is the fallback for a device that will not scan.",
+        },
+      ],
+    },
+    {
+      id: "power",
+      label: "Power",
+      icon: Zap,
+      blurb: "Four verbs, the way a hosting panel sends them.",
+      body: [
+        {
           kind: "p",
-          text: "Pairing takes one of two routes. QR is the default: the panel renders the matrix and your phone scans it. The eight-digit code is the fallback for a device that will not scan — open Linked devices on the phone and type it in. The code expires, so copy it before the timer runs out.",
+          text: "The panel sends a verb and wings translates it into whatever stops the agent. For us that is the socket lifecycle, not Docker — but the four verbs and their meanings are the same.",
+        },
+        {
+          kind: "list",
+          items: [
+            "start — bring the socket up and walk the pairing handshake",
+            "stop — close cleanly, creds stay on disk",
+            "restart — stop, then start",
+            "kill — drop it now: no flush, no goodbye",
+          ],
+        },
+        {
+          kind: "code",
+          lang: "bash",
+          lines: [
+            'curl -X POST https://your-panel/api/servers/<uuid>/power \\',
+            '  -H "Authorization: Bearer <wings token>" \\',
+            '  -d \'{"action":"restart"}\'',
+          ],
         },
         {
           kind: "note",
-          tone: "neon",
-          text: "Installs require a disconnected session. Tear the socket down first, lay the files down, then bring it back up.",
+          tone: "ember",
+          text: "An install needs the server stopped. Tear the socket down, lay the files down, then bring it back up.",
         },
       ],
     },
@@ -90,14 +172,15 @@ export default function Docs() {
       body: [
         {
           kind: "p",
-          text: "An egg is the unit of reuse. It declares what the agent is — name, description, runtime, startup command, install script — and ships the files that make it real: index.js, package.json, a queue config, a README. Installing lays every file onto the session's disk, then runs the install script.",
+          text: "An egg is the unit of reuse, and it lives on a nest. It declares what the agent is — name, description, runtime image, startup command, stop command, install script — and ships the files that make it real: index.js, package.json, a premium store, a README. Installing lays every file onto the server's disk, then runs the install script.",
         },
         {
           kind: "list",
           items: [
+            "image — the runtime it pulls, the egg's Docker image equivalent",
             "startup — the command wings runs to boot the agent, e.g. node index.js",
+            "stopCommand — the signal sent on stop, usually SIGTERM",
             "installScript — what runs once before the first start, e.g. npm install",
-            "runtime — the base it is built against; a mismatch fails the install",
             "config.env — the variables the install asks you for before it starts",
           ],
         },
@@ -110,15 +193,17 @@ export default function Docs() {
           lang: "json",
           lines: [
             "{",
-            '  "name": "Blast runner",',
+            '  "name": "Blast Runner",',
             '  "description": "Send a templated blast to a list of JIDs.",',
             '  "category": "Blast",',
             '  "tags": ["blast", "queue"],',
             '  "runtime": "nodejs_22",',
+            '  "image": "ghcr.io/kaizen/baileys:nodejs22",',
             '  "startup": "node index.js",',
+            '  "stopCommand": "SIGTERM",',
             '  "installScript": "npm install",',
             '  "config": {',
-            '    "env": { "PREFIX": "", "DELAY_MS": "800" }',
+            '    "env": { "PREFIX": "", "DELAY_MS": "4000" }',
             "  }",
             "}",
           ],
@@ -169,11 +254,11 @@ export default function Docs() {
       id: "wings",
       label: "Wings",
       icon: Terminal,
-      blurb: "The agent runtime that holds the socket and boots your script.",
+      blurb: "The agent on the node: the socket, the volume, the console.",
       body: [
         {
           kind: "p",
-          text: "Wings is the layer between an egg's script and WhatsApp. Your code never imports the SDK — wings hands it a live sock with the same names a real Baileys socket has, keeps the connection up and streams every line the script prints back to the console.",
+          text: "Wings is the layer between an egg's script and WhatsApp, and between the panel and the machine. It receives commands over HTTPS with the node's bearer token, keeps the socket up, owns the volume, and streams every line the script prints back to the console.",
         },
         {
           kind: "code",
@@ -192,7 +277,7 @@ export default function Docs() {
         },
         {
           kind: "p",
-          text: "Two ways to run that. The sandbox evaluates the script in a node:vm with no process, no require and no network — fast, free, and enough to write and test an agent. The runner is a single-file Node daemon you run yourself, which opens the genuine socket against @whiskeysockets/baileys and points at the same directory the file manager produced.",
+          text: "Your code never imports the SDK. Wings hands it a live sock with the same names a real Baileys socket has, and require is wired to the server's own files — so require('./premium.json') reads the copy the install laid down. The same file runs in three places unchanged: the sandbox, a node, and the runner on your own machine.",
         },
         {
           kind: "code",
@@ -212,12 +297,12 @@ export default function Docs() {
     {
       id: "files",
       label: "File manager",
-      icon: FileCode,
-      blurb: "The session's disk: upload a folder, edit in place, pull it back out.",
+      icon: FolderTree,
+      blurb: "The server's volume: upload a folder, edit in place, pull it back out.",
       body: [
         {
           kind: "p",
-          text: "Every session has a disk and the file manager is the editor for it. Drop a folder of scripts from your desktop and the relative paths are preserved, so a project arrives with its shape intact. Open any file to edit it in place, rename it, or download it back.",
+          text: "Every server has a volume and the file manager is the editor for it — the same thing SFTP gives you on a real node. Drop a folder of scripts from your desktop and the relative paths are preserved, so a project arrives with its shape intact. Open any file to edit it in place, rename it, or download it back.",
         },
         {
           kind: "table",
@@ -231,7 +316,7 @@ export default function Docs() {
         },
         {
           kind: "p",
-          text: "Text only. This is a place for scripts and manifests, not binary assets — an image or an audio clip has nowhere useful to go on a session's disk.",
+          text: "Text only. This is a place for scripts and manifests, not binary assets — an image or an audio clip has nowhere useful to go on a server's volume.",
         },
       ],
     },
@@ -243,7 +328,7 @@ export default function Docs() {
       body: [
         {
           kind: "p",
-          text: "Two ways to get data out. A panel key is a bearer credential for talking to the panel's own API from something that is not a browser. A webhook is the other direction: the panel POSTs to you when something happens on a session.",
+          text: "Two ways to get data out. A panel key is a bearer credential for talking to the panel from something that is not a browser. A webhook is the other direction: the panel POSTs to you when something happens on a server.",
         },
         {
           kind: "list",

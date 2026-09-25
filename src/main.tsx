@@ -37,6 +37,9 @@ const AdminShell = lazy(() => import("./components/admin/AdminShell.tsx").then((
 const AdminOverview = lazy(() => import("./pages/admin/AdminOverview.tsx"));
 const AdminCatalog = lazy(() => import("./pages/admin/AdminCatalog.tsx"));
 const AdminEggs = lazy(() => import("./pages/admin/AdminEggs.tsx"));
+const AdminInfrastructure = lazy(
+  () => import("./pages/admin/AdminInfrastructure.tsx"),
+);
 const AdminBookings = lazy(() => import("./pages/admin/AdminBookings.tsx"));
 const AdminCommunity = lazy(() =>
   import("./pages/admin/AdminCommunity.tsx").then((m) => ({
@@ -205,6 +208,10 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="overview" element={<AdminOverview />} />
                 <Route path="catalog" element={<AdminCatalog />} />
                 <Route path="eggs" element={<AdminEggs />} />
+                <Route
+                  path="infrastructure"
+                  element={<AdminInfrastructure />}
+                />
                 <Route path="bookings" element={<AdminBookings />} />
                 <Route path="posts" element={<AdminCommunity />} />
                 <Route path="inbox" element={<AdminInbox />} />

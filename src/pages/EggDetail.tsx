@@ -37,6 +37,7 @@ export default function EggDetail() {
     api.sessions.listSessions,
     isAuthenticated ? {} : "skip",
   );
+  const nests = useQuery(api.infrastructure.listNests, {});
   const { install, installing, installId, variables, setVariable } =
     useInstallFlow();
 
@@ -76,6 +77,7 @@ export default function EggDetail() {
       ? (egg.accent as AccentKey)
       : "neon"];
 
+  const nest = (nests ?? []).find((n) => n._id === egg.nestId);
   const target = variables.__sessionId ?? "";
 
   return (
@@ -99,7 +101,14 @@ export default function EggDetail() {
           className="mt-6 grid gap-8 lg:grid-cols-[1.6fr_1fr]"
         >
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {nest && (
+                <span className="flex items-center gap-1.5 font-mono text-[11px] text-mist">
+                  <span>{nest.emoji}</span>
+                  {nest.name}
+                  <span className="text-mist/50">/</span>
+                </span>
+              )}
               <SectionTag tone={accent.tag}>{egg.category}</SectionTag>
               {egg.official && (
                 <span className="flex items-center gap-1 rounded-full border border-neon/30 px-2 py-0.5 text-[10px] font-semibold text-neon">
@@ -125,6 +134,9 @@ export default function EggDetail() {
                 <Cpu className="size-3.5" />
                 {egg.runtime}
               </span>
+              {egg.image && (
+                <span className="font-mono text-[11px]">{egg.image}</span>
+              )}
               <span>by {egg.author}</span>
             </div>
 
@@ -136,8 +148,10 @@ export default function EggDetail() {
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
                 { k: "Startup", v: egg.startup, mono: true },
+                { k: "Stop", v: egg.stopCommand ?? "SIGTERM", mono: true },
                 { k: "Install", v: egg.installScript, mono: true },
                 { k: "Runtime", v: egg.runtime, mono: true },
+                { k: "Image", v: egg.image ?? "—", mono: true },
                 {
                   k: "Environment",
                   v: (egg.env ?? []).join(", ") || "none",

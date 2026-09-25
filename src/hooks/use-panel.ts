@@ -15,6 +15,27 @@ export function useActivity() {
   return useQuery(api.sessions.activity, {});
 }
 
+/** The full server object for one session, joined to its node and allocation. */
+export function useServerDetail(sessionId: SessionId | undefined) {
+  return useQuery(
+    api.sessions.serverDetail,
+    sessionId ? { sessionId } : "skip",
+  );
+}
+
+/** Nests, with how many eggs each one holds. */
+export function useNests() {
+  return useQuery(api.infrastructure.listNests, {});
+}
+
+/** Nodes, with their allocation and server counts. */
+export function useNodes() {
+  return useQuery(api.infrastructure.listNodes, {});
+}
+
+/** The four power verbs a hosting panel sends. */
+export type PowerAction = "start" | "stop" | "restart" | "kill";
+
 export function useRecentMessages(limit = 12) {
   return useQuery(api.sessions.recentMessages, { limit });
 }
@@ -123,6 +144,9 @@ export function usePanelActions() {
     renameSession: useMutation(api.sessions.renameSession),
     updateConfig: useMutation(api.sessions.updateConfig),
     disconnect: useMutation(api.sessions.disconnectSession),
+
+    power: useMutation(api.sessions.powerAction),
+    suspend: useMutation(api.sessions.suspendSession),
 
     startPairing: useMutation(api.waRuntime.startPairing),
     regenerate: useMutation(api.waRuntime.regeneratePairing),

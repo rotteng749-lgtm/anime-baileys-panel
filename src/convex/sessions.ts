@@ -1,6 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { GenericId } from "convex/values";
+import { makeUuid } from "./infrastructure";
 import type { PairMethod } from "./schema";
 
 /**
@@ -222,10 +224,52 @@ export const createSession = mutation({
     name: v.string(),
     phone: v.optional(v.string()),
     pairMethod: v.union(v.literal("qr"), v.literal("code")),
+    memory: v.optional(v.number()),
+    disk: v.optional(v.number()),
+    cpuMilli: v.optional(v.number()),
+    swap: v.optional(v.number()),
+    io: v.optional(v.number()),
+    eggSlug: v.optional(v.string()),
+    nodeId: v.optional(v.id("nodes")),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
     const now = Date.now();
+
+    // The node and allocation are chosen the way a hosting panel chooses them:
+    // a free ip:port on a machine that has room, claimed before the server
+    // row exists so nothing races for it.
+    const nodes = await ctx.db.query("nodes").collect();
+    const node =
+      args.nodeId !== undefined
+        ? nodes.find((n) => n._id === args.nodeId)
+        : nodes[0];
+
+    let allocationId: GenericId<"allocations"> | undefined;
+    if (node) {
+      const free = await ctx.db
+        .query("allocations")
+        .withIndex("by_node", (q) => q.eq("nodeId", node._id))
+        .collect();
+      const allocation = free.find((a) => !a.assigned);
+      if (allocation) {
+        allocationId = allocation._id;
+        await ctx.db.patch(allocation._id, {
+          assigned: true,
+          sessionId: undefined,
+        });
+      }
+    }
+
+    const eggSlug = args.eggSlug;
+    const egg = eggSlug
+      ? await ctx.db
+          .query("eggs")
+          .withIndex("by_slug", (q) => q.eq("slug", eggSlug))
+          .unique()
+      : null;
+
+    const uuid = makeUuid();
     const sessionId = await ctx.db.insert("waSessions", {
       ownerId: userId,
       name: args.name,
@@ -236,17 +280,150 @@ export const createSession = mutation({
       memoryMb: 0,
       messagesSent: 0,
       messagesReceived: 0,
+
+      uuid,
+      uuidShort: uuid.slice(0, 8),
+      nodeId: node?._id,
+      allocationId,
+      nestId: egg?.nestId,
+      eggId: egg?._id,
+      memory: args.memory ?? 512,
+      swap: args.swap ?? 0,
+      disk: args.disk ?? 2048,
+      io: args.io ?? 500,
+      cpuMilli: args.cpuMilli ?? 500,
+      startup: egg?.startup,
+      image: egg?.image,
+      power: "stopped",
+      installState: egg ? "installing" : "installed",
+
       createdAt: now,
       lastSeenAt: now,
       statusChangedAt: now,
     });
+
+    if (allocationId) {
+      await ctx.db.patch(allocationId, { sessionId });
+    }
+
     await ctx.db.insert("sessionLogs", {
       sessionId,
       level: "info",
-      message: `[kaizen] session "${args.name}" provisioned — runtime baileys/6.x`,
+      message: `[panel] server created — ${args.name} (${uuid.slice(0, 8)}) on ${
+        node?.name ?? "the local node"
+      }`,
       createdAt: now,
     });
+    if (node) {
+      await ctx.db.insert("sessionLogs", {
+        sessionId,
+        level: "debug",
+        message: `[wings] POST /api/servers → volume /var/lib/baileys/volumes/${uuid}`,
+        createdAt: now,
+      });
+    }
+    if (egg) {
+      await ctx.db.insert("sessionLogs", {
+        sessionId,
+        level: "info",
+        message: `[wings] pulling image ${egg.image ?? egg.runtime}, running install script`,
+        createdAt: now,
+      });
+    }
     return sessionId;
+  },
+});
+
+/* ------------------------------------------------------------------ */
+/* Power                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Power actions, in the four verbs a hosting panel uses.
+ *
+ * The panel sends the verb, wings translates it to whatever stops the agent —
+ * for us that is the socket lifecycle, not Docker:
+ *
+ *   start   → bring the socket up and walk the pairing handshake
+ *   stop    → SIGTERM: close cleanly, keep the creds on disk
+ *   restart → stop, then start
+ *   kill    → SIGKILL: drop the socket now, no flush, no goodbye
+ */
+export const powerAction = mutation({
+  args: {
+    sessionId: v.id("waSessions"),
+    action: v.union(
+      v.literal("start"),
+      v.literal("stop"),
+      v.literal("restart"),
+      v.literal("kill"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("Session not found");
+    }
+    if (session.suspended) throw new Error("This server is suspended");
+
+    const now = Date.now();
+    const say = async (level: "info" | "warn" | "command", message: string) =>
+      ctx.db.insert("sessionLogs", {
+        sessionId: session._id,
+        level,
+        message,
+        createdAt: Date.now(),
+      });
+
+    const start = async () => {
+      if (session.status === "connected") {
+        await say("warn", `[wings] start ignored — already running`);
+        return;
+      }
+      await ctx.db.patch(session._id, {
+        status: "awaiting_pairing",
+        power: "running",
+        lastSeenAt: now,
+        statusChangedAt: now,
+      });
+      await say("command", `[wings] POST /api/servers/${session.uuid ?? session._id}/power → start`);
+      await say("info", `[baileys] connecting to wss://web.whatsapp.com/ws/chat`);
+    };
+
+    const stop = async (reason: string, level: "warn" | "command") => {
+      if (session.status === "disconnected" && session.power === "stopped") {
+        await say("warn", `[wings] stop ignored — already stopped`);
+        return;
+      }
+      await ctx.db.patch(session._id, {
+        status: "disconnected",
+        power: "stopped",
+        jid: undefined,
+        pushName: undefined,
+        qrPayload: undefined,
+        pairingCode: undefined,
+        pairingExpiresAt: undefined,
+        cpu: 0,
+        memoryMb: 0,
+        lastSeenAt: now,
+        statusChangedAt: now,
+      });
+      await say(level, `[wings] power → stop (${reason})`);
+      await say("warn", `[baileys] connection closed — ${reason}`);
+    };
+
+    if (args.action === "start") {
+      await start();
+    } else if (args.action === "stop") {
+      await stop("stopped by operator", "command");
+    } else if (args.action === "kill") {
+      await stop("killed — no flush", "command");
+      await ctx.db.patch(session._id, { jid: undefined });
+    } else {
+      await stop("restarting", "command");
+      await start();
+    }
   },
 });
 
@@ -270,6 +447,16 @@ export const deleteSession = mutation({
     if (session === null || session.ownerId !== userId) {
       throw new Error("Session not found");
     }
+
+    // Free the allocation before the row goes, the way a panel releases the
+    // ip:port when a server is deleted.
+    if (session.allocationId) {
+      await ctx.db.patch(session.allocationId, {
+        assigned: false,
+        sessionId: undefined,
+      });
+    }
+
     const logs = await ctx.db
       .query("sessionLogs")
       .withIndex("by_session", (q) => q.eq("sessionId", session._id))
@@ -283,6 +470,102 @@ export const deleteSession = mutation({
     await ctx.db.delete(session._id);
   },
 });
+
+export const suspendSession = mutation({
+  args: { sessionId: v.id("waSessions"), suspended: v.boolean() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("Session not found");
+    }
+    await ctx.db.patch(session._id, { suspended: args.suspended });
+    await ctx.db.insert("sessionLogs", {
+      sessionId: session._id,
+      level: args.suspended ? "warn" : "info",
+      message: `[panel] server ${args.suspended ? "suspended" : "unsuspended"}`,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/** The server object, joined to its node and allocation for the detail view. */
+export const serverDetail = query({
+  args: { sessionId: v.id("waSessions") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) return null;
+
+    const node = session.nodeId ? await ctx.db.get(session.nodeId) : null;
+    const allocation = session.allocationId
+      ? await ctx.db.get(session.allocationId)
+      : null;
+    const nest = session.nestId ? await ctx.db.get(session.nestId) : null;
+    const egg = session.eggId ? await ctx.db.get(session.eggId) : null;
+    const installs = await ctx.db
+      .query("sessionInstalls")
+      .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+      .collect();
+
+    return {
+      ...session,
+      node: node
+        ? {
+            _id: node._id,
+            id: node.id,
+            name: node.name,
+            location: node.location,
+            fqdn: node.fqdn,
+            scheme: node.scheme,
+            online: node.online,
+            daemonVersion: node.daemonVersion,
+          }
+        : null,
+      allocation: allocation
+        ? { _id: allocation._id, ip: allocation.ip, port: allocation.port }
+        : null,
+      nest: nest ? { _id: nest._id, name: nest.name, slug: nest.slug } : null,
+      egg: egg
+        ? { _id: egg._id, name: egg.name, slug: egg.slug, image: egg.image }
+        : null,
+      installs: installs.reverse(),
+    };
+  },
+});
+
+/** The panel API, the way a hosting panel answers a bearer request. */
+export const listServers = query({
+  args: {},
+  handler: async (ctx) => {
+    const sessions = await ctx.db.query("waSessions").collect();
+    return sessions.map((s) => ({
+      uuid: s.uuid,
+      uuidShort: s.uuidShort,
+      name: s.name,
+      ownerId: s.ownerId,
+      nodeId: s.nodeId,
+      allocationId: s.allocationId,
+      nestId: s.nestId,
+      eggId: s.eggId,
+      memory: s.memory,
+      swap: s.swap,
+      disk: s.disk,
+      io: s.io,
+      cpu: s.cpuMilli,
+      startup: s.startup,
+      image: s.image,
+      skipScripts: s.skipScripts,
+      power: s.power,
+      suspended: s.suspended,
+      status: s.status,
+      jid: s.jid,
+      createdAt: s.createdAt,
+    }));
+  },
+});
+
 
 export const updateConfig = mutation({
   args: {

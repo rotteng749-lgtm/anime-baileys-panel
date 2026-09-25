@@ -58,23 +58,23 @@ const BRIDGE: { group: string; members: { name: string; note: string }[] }[] = [
 const STAGES = [
   {
     n: "01",
-    title: "The panel lays the files down",
-    body: "Installing an egg writes every file it ships onto the session's disk — index.js, package.json, whatever else the manifest carries. Nothing runs yet.",
+    title: "The panel claims a volume",
+    body: "Creating a server takes a free ip:port on a node and gives it a uuid. Wings makes the directory that uuid names — the same address the file manager and SFTP see.",
   },
   {
     n: "02",
-    title: "Wings resolves a runtime",
-    body: "The session's runtime (nodejs_22, bun, deno…) is checked against the egg's requirement. A mismatch fails the install rather than crashing at boot.",
+    title: "Wings pulls the image",
+    body: "The egg's runtime image is resolved against the server's. A mismatch fails the install rather than crashing at boot, which is a far nicer thing to debug at two in the morning.",
   },
   {
     n: "03",
-    title: "The install script runs",
-    body: "npm install, bun install, deno cache — whatever the manifest declared. Progress streams to the console as one line at a time.",
+    title: "The files land, then the install script runs",
+    body: "Every file the egg ships is written to the volume, then npm install runs. Progress streams to the console one line at a time.",
   },
   {
     n: "04",
     title: "The entrypoint boots",
-    body: "Wings executes the startup command in a context where `baileys` and `makeWASocket` are already bound. Your script never imports the SDK; it is handed a live socket.",
+    body: "Wings runs the startup command where `baileys` and `makeWASocket` are already bound. Your script never imports the SDK; it is handed a live socket.",
   },
 ];
 

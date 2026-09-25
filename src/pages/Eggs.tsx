@@ -24,14 +24,20 @@ import { cn } from "@/lib/utils";
 export default function Eggs() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | undefined>();
+  const [nest, setNest] = useState<string | undefined>();
   const deferred = useDeferredValue(search);
 
   const categories = useQuery(api.eggs.listCategories, {});
   const runtimes = useQuery(api.eggs.listRuntimes, {});
+  const nests = useQuery(api.infrastructure.listNests, {});
   const eggs = useQuery(api.eggs.listEggs, {
     search: deferred || undefined,
     category,
   });
+
+  // The nest filter is a client-side grouping: the query returns the shelf, the
+  // chips decide which one you are looking at.
+  const onNest = (eggs ?? []).filter((e) => !nest || e.nestId === nest);
 
   useEggsReady(eggs?.length, runtimes?.length);
 
@@ -98,6 +104,26 @@ export default function Eggs() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Chip active={nest === undefined} onClick={() => setNest(undefined)}>
+              All nests
+            </Chip>
+            {(nests ?? []).map((n) => (
+              <Chip
+                key={n._id}
+                active={nest === n._id}
+                onClick={() => setNest(nest === n._id ? undefined : n._id)}
+              >
+                <span className="mr-1.5">{n.emoji}</span>
+                {n.name}
+                <span className="ml-1.5 text-[10px] opacity-60">{n.eggCount}</span>
+              </Chip>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 font-mono text-[10px] uppercase tracking-widest text-mist">
+              category
+            </span>
             <Chip active={category === undefined} onClick={() => setCategory(undefined)}>
               All
             </Chip>
@@ -122,23 +148,23 @@ export default function Eggs() {
                   <div key={i} className="slab h-60 animate-pulse opacity-60" />
                 ))}
               </div>
-            ) : eggs.length === 0 ? (
+            ) : onNest.length === 0 ? (
               <EmptyState
                 icon={Box}
                 title="No eggs match that"
                 description={
                   search
                     ? `Nothing for "${search}". Try a broader term or clear the filters.`
-                    : "No eggs in this category yet."
+                    : "No eggs on this shelf yet."
                 }
               />
             ) : (
               <>
                 <p className="mb-4 text-xs text-mist">
-                  {eggs.length} {eggs.length === 1 ? "egg" : "eggs"}
+                  {onNest.length} {onNest.length === 1 ? "egg" : "eggs"}
                 </p>
                 <div className="grid gap-5 sm:grid-cols-2">
-                  {eggs.map((egg, i) => (
+                  {onNest.map((egg, i) => (
                     <EggCard key={egg._id} egg={egg} index={i} />
                   ))}
                 </div>

@@ -167,10 +167,13 @@ export const removeNode = mutation({
 export const listAllocations = query({
   args: { nodeId: v.optional(v.id("nodes")) },
   handler: async (ctx, args) => {
-    if (!args.nodeId) return await ctx.db.query("allocations").collect();
+    const nodeId = args.nodeId;
+    if (nodeId === undefined) {
+      return await ctx.db.query("allocations").collect();
+    }
     return await ctx.db
       .query("allocations")
-      .withIndex("by_node", (q) => q.eq("nodeId", args.nodeId))
+      .withIndex("by_node", (q) => q.eq("nodeId", nodeId))
       .collect();
   },
 });
@@ -237,6 +240,12 @@ export function slugify(value: string) {
     .slice(0, 24);
 }
 
+type SeedCtx = {
+  // The seeder only ever calls query().collect() and insert().
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any;
+};
+
 /** A v4-shaped uuid. Wings addresses the volume by this. */
 export function makeUuid() {
   const hex = randomToken(32).replace(/[a-z]/g, "c");
@@ -252,7 +261,17 @@ export function makeUuid() {
  */
 export const backfillServers = mutation({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx) => backfillServerRows(ctx),
+});
+
+/**
+ * Give every session the server-object fields it is missing.
+ *
+ * Sessions created before the hosting model existed have no uuid, no resource
+ * limits and no power state. This fills them in once, without touching the
+ * socket, so the panel and the wings API see the same shape either way.
+ */
+export async function backfillServerRows(ctx: SeedCtx) {
     const sessions = await ctx.db.query("waSessions").collect();
     const nodes = await ctx.db.query("nodes").collect();
     const node = nodes[0];
@@ -264,10 +283,15 @@ export const backfillServers = mutation({
       const uuid = makeUuid();
       let allocationId = session.allocationId;
       if (node && !allocationId) {
-        const free = await ctx.db
+        const free = (await ctx.db
           .query("allocations")
-          .withIndex("by_node", (q) => q.eq("nodeId", node._id))
-          .collect();
+          .withIndex("by_node", (q: { eq: (f: "nodeId", v: unknown) => unknown }) =>
+            q.eq("nodeId", node._id),
+          )
+          .collect()) as {
+          _id: string;
+          assigned: boolean;
+        }[];
         const allocation = free.find((a) => !a.assigned);
         if (allocation) {
           await ctx.db.patch(allocation._id, {
@@ -296,5 +320,4 @@ export const backfillServers = mutation({
     }
 
     return patched;
-  },
-});
+}

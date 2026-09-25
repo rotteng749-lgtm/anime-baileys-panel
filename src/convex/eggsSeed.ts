@@ -7,6 +7,8 @@
  * scripts written for this panel.
  */
 
+import { KAIZEN_EGG } from "./botSeed";
+
 export const RUNTIMES = [
   {
     id: "nodejs_22",
@@ -209,6 +211,7 @@ sock.ev.on("messages.upsert", async ({ messages }) => {
 `;
 
 export const EGGS = [
+  ...[KAIZEN_EGG],
   {
     slug: "starter-bot",
     name: "Starter Bot",
@@ -218,7 +221,9 @@ export const EGGS = [
     category: "Starter",
     tags: ["starter", "keywords", "single-device"],
     runtime: "nodejs_22",
+    image: "ghcr.io/kaizen/baileys:nodejs22",
     startup: "node index.js",
+    stopCommand: "SIGTERM",
     installScript: "npm install",
     env: ["NODE_ENV=production"],
     accent: "neon" as const,
@@ -241,7 +246,9 @@ export const EGGS = [
     category: "Blast",
     tags: ["queue", "pacing", "campaign"],
     runtime: "nodejs_22",
+    image: "ghcr.io/kaizen/baileys:nodejs22",
     startup: "node index.js",
+    stopCommand: "SIGTERM",
     installScript: "npm install",
     env: ["NODE_ENV=production", "DELAY_MS=4000"],
     accent: "ember" as const,
@@ -265,7 +272,9 @@ export const EGGS = [
     category: "Auto-reply",
     tags: ["rules", "keywords", "oow"],
     runtime: "nodejs_20",
+    image: "ghcr.io/kaizen/baileys:nodejs20",
     startup: "node index.js",
+    stopCommand: "SIGTERM",
     installScript: "npm install",
     env: ["NODE_ENV=production", "PREFIX=Kaizen Bot"],
     accent: "holo" as const,
@@ -288,7 +297,9 @@ export const EGGS = [
     category: "Developer",
     tags: ["webhook", "events", "http"],
     runtime: "nodejs_22",
+    image: "ghcr.io/kaizen/baileys:nodejs22",
     startup: "node index.js",
+    stopCommand: "SIGTERM",
     installScript: "npm install",
     env: ["WEBHOOK_URL="],
     accent: "sakura" as const,
@@ -333,6 +344,7 @@ export async function seedEggs(ctx: SeedCtx) {
   const rows = (await ctx.db.query("eggs").collect()) as {
     _id: string;
     slug: string;
+    [key: string]: unknown;
   }[];
   const bySlug = new Map(rows.map((e) => [e.slug, e]));
   let added = 0;
@@ -355,6 +367,27 @@ export async function seedEggs(ctx: SeedCtx) {
           await ctx.db.patch(row._id, { contents: file.contents });
         }
       }
+
+      // Manifest fields too — an egg that gains an image or a stop command
+      // should not need a fresh deployment to pick it up.
+      const current = existing as unknown as Record<string, unknown>;
+      const patch: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries({
+        name: egg.name,
+        description: egg.description,
+        category: egg.category,
+        runtime: egg.runtime,
+        image: egg.image,
+        startup: egg.startup,
+        stopCommand: egg.stopCommand,
+        installScript: egg.installScript,
+        accent: egg.accent,
+      })) {
+        if (value !== undefined && current[key] !== value) patch[key] = value;
+      }
+      if (Object.keys(patch).length > 0) {
+        await ctx.db.patch(existing._id as never, patch);
+      }
       continue;
     }
 
@@ -366,7 +399,9 @@ export async function seedEggs(ctx: SeedCtx) {
       category: egg.category,
       tags: [...egg.tags],
       runtime: egg.runtime,
+      image: egg.image,
       startup: egg.startup,
+      stopCommand: egg.stopCommand,
       installScript: egg.installScript,
       env: [...egg.env],
       accent: egg.accent,
