@@ -179,6 +179,44 @@ const schema = defineSchema(
       messagesSent: v.number(),
       messagesReceived: v.number(),
 
+      // ----------------------------------------------------------------
+      // The server object, Pterodactyl's `servers` row
+      // ----------------------------------------------------------------
+
+      /** Stable identifier wings addresses the volume by. */
+      uuid: v.optional(v.string()),
+      /** The short form shown in the panel, e.g. "a1b2c3". */
+      uuidShort: v.optional(v.string()),
+      /** The machine running wings for this session. */
+      nodeId: v.optional(v.id("nodes")),
+      /** The reserved ip:port this session answers on. */
+      allocationId: v.optional(v.id("allocations")),
+      nestId: v.optional(v.id("nests")),
+      eggId: v.optional(v.id("eggs")),
+
+      /** Resource limits, in the same units the panel quotes. */
+      memory: v.optional(v.number()),
+      swap: v.optional(v.number()),
+      disk: v.optional(v.number()),
+      io: v.optional(v.number()),
+      /** CPU in millicores, the unit Docker takes. */
+      cpuMilli: v.optional(v.number()),
+
+      /** Overridden startup command, set when an egg is installed. */
+      startup: v.optional(v.string()),
+      /** The runtime image, the egg's equivalent of a Docker image. */
+      image: v.optional(v.string()),
+      /** Skip the install script on the next install. */
+      skipScripts: v.optional(v.boolean()),
+
+      /** Power state, as the panel reports it. */
+      power: v.optional(
+        v.union(v.literal("running"), v.literal("stopped")),
+      ),
+      suspended: v.optional(v.boolean()),
+      /** Installing, installed, or failed — the install queue's headline. */
+      installState: v.optional(v.string()),
+
       createdAt: v.number(),
       lastConnectedAt: v.optional(v.number()),
       lastSeenAt: v.number(),
@@ -186,7 +224,8 @@ const schema = defineSchema(
       statusChangedAt: v.number(),
     })
       .index("by_owner", ["ownerId"])
-      .index("by_owner_status", ["ownerId", "status"]),
+      .index("by_owner_status", ["ownerId", "status"])
+      .index("by_uuid", ["uuid"]),
 
     /** Append-only console stream for a session. */
     sessionLogs: defineTable({
@@ -371,6 +410,81 @@ const schema = defineSchema(
     }).index("by_token", ["tokenHash"]),
 
     // ------------------------------------------------------------------
+    // Nests, nodes and allocations — the hosting-panel concepts
+    // ------------------------------------------------------------------
+
+    /**
+     * A nest: the big category an egg lives in.
+     *
+     * Minecraft, Steam, Discord, WhatsApp — a nest is a shelf of eggs that
+     * share a shape, and it is the first thing you pick when you create a
+     * server.
+     */
+    nests: defineTable({
+      slug: v.string(),
+      name: v.string(),
+      description: v.string(),
+      emoji: v.string(),
+      accent: v.union(
+        v.literal("neon"),
+        v.literal("holo"),
+        v.literal("sakura"),
+        v.literal("ember"),
+      ),
+      createdAt: v.number(),
+    }).index("by_slug", ["slug"]),
+
+    /**
+     * A node: one machine running wings.
+     *
+     * The panel never talks to a socket directly — it talks to the node's
+     * daemon over HTTPS with a bearer token, exactly like a hosting panel
+     * does. The token is stored hashed and shown once.
+     */
+    nodes: defineTable({
+      /** The node's own identifier, e.g. "node-jkt-01". */
+      id: v.string(),
+      name: v.string(),
+      /** Free-text location, e.g. "Jakarta, ID". */
+      location: v.string(),
+      /** Host the panel dials, e.g. "jkt1.panel.example". */
+      fqdn: v.string(),
+      scheme: v.union(v.literal("http"), v.literal("https")),
+      tokenPrefix: v.string(),
+      tokenHash: v.string(),
+      /** What the machine has, in total. */
+      totalMemoryMb: v.number(),
+      totalDiskMb: v.number(),
+      totalCpu: v.number(),
+      daemonVersion: v.string(),
+      online: v.boolean(),
+      lastSeenAt: v.optional(v.number()),
+      createdAt: v.number(),
+    })
+      .index("by_node_id", ["id"])
+      .index("by_token", ["tokenHash"]),
+
+    /**
+     * An allocation: a reserved ip:port.
+     *
+     * One server takes one primary allocation; additional ports hang off the
+     * same pair. An allocation that is not assigned is free for the next
+     * server.
+     */
+    allocations: defineTable({
+      nodeId: v.id("nodes"),
+      ip: v.string(),
+      port: v.number(),
+      /** Additional ports on the same ip, if the node allows them. */
+      portRange: v.optional(v.array(v.number())),
+      assigned: v.boolean(),
+      sessionId: v.optional(v.id("waSessions")),
+      createdAt: v.number(),
+    })
+      .index("by_node", ["nodeId"])
+      .index("by_session", ["sessionId"]),
+
+    // ------------------------------------------------------------------
     // Eggs — installable Baileys bot templates
     //
     // Same shape as a server-hosting egg: a manifest plus the files it
@@ -383,16 +497,31 @@ const schema = defineSchema(
       author: v.string(),
       authorId: v.optional(v.id("users")),
       description: v.string(),
+      /** The nest this egg is filed under. */
+      nestId: v.optional(v.id("nests")),
       category: v.string(),
       tags: v.array(v.string()),
       /** Which base runtime this egg targets, e.g. "nodejs_22". */
       runtime: v.string(),
+      /** The runtime image wings pulls, the egg's Docker image equivalent. */
+      image: v.optional(v.string()),
       /** The command the agent runs when the bot starts. */
       startup: v.string(),
+      /** The signal wings sends on stop — the egg's stop command. */
+      stopCommand: v.optional(v.string()),
       /** The install script, run once before first start. */
       installScript: v.string(),
       /** Default environment variables baked into the install. */
       env: v.optional(v.array(v.string())),
+      /** Files the install writes, as path + mode + contents overrides. */
+      configFiles: v.optional(
+        v.array(
+          v.object({
+            path: v.string(),
+            contents: v.string(),
+          }),
+        ),
+      ),
       accent: v.union(
         v.literal("neon"),
         v.literal("holo"),
@@ -405,6 +534,7 @@ const schema = defineSchema(
       createdAt: v.number(),
     })
       .index("by_slug", ["slug"])
+      .index("by_nest", ["nestId"])
       .index("by_created", ["createdAt"]),
 
     /** Files an egg ships with — the .js, .json and anything else. */
