@@ -1,3 +1,6 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { mutation } from "./_generated/server";
 import { randomToken, slugify } from "./infrastructure";
 
 /**
@@ -70,6 +73,34 @@ export const EGG_NEST: Record<string, string> = {
  * is fixed so the docs can show a working curl, and it is stored hashed.
  */
 export const DEFAULT_NODE_TOKEN = "wings_demo_node_token_change_me";
+
+/**
+ * Put a node back on the seeded demo token.
+ *
+ * For the one case that actually happens: the token was rotated, the string is
+ * gone, and the panel's copy-paste agent command should work again. It is the
+ * same known token the seeder installs — a deliberate convenience on a panel
+ * whose node tokens are already shown to its operator, not a hidden secret.
+ */
+export const resetNodeToDemoToken = mutation({
+  args: { nodeId: v.id("nodes") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Sign in to change a node token");
+    const node = await ctx.db.get(args.nodeId);
+    if (node === null) throw new Error("No such node");
+
+    await ctx.db.patch(args.nodeId, {
+      tokenHash: await digest(DEFAULT_NODE_TOKEN),
+      tokenPrefix: DEFAULT_NODE_TOKEN.slice(0, 12),
+    });
+
+    return {
+      token: DEFAULT_NODE_TOKEN,
+      tokenPrefix: DEFAULT_NODE_TOKEN.slice(0, 12),
+    };
+  },
+});
 
 export const NODES = [
   {

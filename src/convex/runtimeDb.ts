@@ -152,10 +152,27 @@ export async function agentOnline(ctx: Ctx, nodeId: unknown): Promise<boolean> {
 }
 
 /**
+ * The verbs where a second queued copy is pure noise.
+ *
+ * `send` and `install` are deliberately not here: two messages are two
+ * messages, and two installs are two installs.
+ */
+const DEDUPE_KINDS: CommandKind[] = [
+  "start",
+  "stop",
+  "restart",
+  "kill",
+  "pairing",
+  "logout",
+];
+
+/**
  * Queue work for the agent that owns a node.
  *
  * Every panel action funnels through here, which is what makes the console
- * honest: if no agent ever claims the row, the row says so.
+ * honest: if no agent ever claims the row, the row says so. Power verbs are
+ * deduped while they are still queued — pressing Start five times with no agent
+ * attached should leave one job waiting, not five.
  */
 export async function enqueue(
   ctx: Ctx,
@@ -167,6 +184,18 @@ export async function enqueue(
   },
 ) {
   const now = Date.now();
+
+  if (args.sessionId && DEDUPE_KINDS.includes(args.kind)) {
+    const pending = (await ctx.db
+      .query("runtimeCommands")
+      .withIndex("by_session", (q: Q) => q.eq("sessionId", args.sessionId))
+      .collect()) as Row[];
+    const duplicate = pending.find(
+      (cmd) => cmd.kind === args.kind && cmd.status === "queued",
+    );
+    if (duplicate) return duplicate._id as GenericId<"runtimeCommands">;
+  }
+
   return await ctx.db.insert("runtimeCommands", {
     nodeId: args.nodeId,
     sessionId: args.sessionId,
@@ -401,16 +430,35 @@ async function pollImpl(
       .collect()) as Row[];
     queued.sort((a, b) => Number(a.createdAt) - Number(b.createdAt));
 
+    // A command whose server is gone is not work. Retire it here so a fresh
+    // agent is never handed a uuid the panel has already forgotten — that is
+    // how orphans from deleted servers would otherwise come back to life.
+    const live: Array<{ cmd: Row; session: Row | null }> = [];
+    for (const cmd of queued) {
+      if (cmd.sessionId === undefined) {
+        live.push({ cmd, session: null });
+        continue;
+      }
+      const session = await ctx.db.get(cmd.sessionId);
+      if (session === null) {
+        await ctx.db.patch(cmd._id, {
+          status: "error",
+          result: "the server this command was queued for no longer exists",
+          updatedAt: now,
+        });
+        continue;
+      }
+      live.push({ cmd, session: session as Row });
+    }
+
     const limit = Math.max(1, Math.min(args.limit ?? 12, 25));
     const claimed: Row[] = [];
-    for (const cmd of queued.slice(0, limit)) {
+    for (const { cmd, session } of live.slice(0, limit)) {
       await ctx.db.patch(cmd._id, {
         status: "running",
         attempts: Number(cmd.attempts) + 1,
         updatedAt: now,
       });
-      const session =
-        cmd.sessionId === undefined ? null : await ctx.db.get(cmd.sessionId);
       claimed.push({
         id: cmd._id,
         kind: cmd.kind,
@@ -419,7 +467,6 @@ async function pollImpl(
         payload: cmd.payload ?? null,
         desired_power: session?.desiredPower ?? null,
         startup: session?.startup ?? null,
-        stop_command: session?.stopCommand ?? null,
         created_at: cmd.createdAt,
       });
     }

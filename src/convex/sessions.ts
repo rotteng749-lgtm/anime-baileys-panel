@@ -434,10 +434,14 @@ export const powerAction = mutation({
         lastSeenAt: now,
         statusChangedAt: now,
       });
-      await say(
-        "info",
-        "[baileys] connecting to wss://web.whatsapp.com/ws/chat",
-      );
+      // Only claim the socket is being dialled when something can actually
+      // dial it. With no agent the honest line is the queued warning below.
+      if (worker !== null) {
+        await say(
+          "info",
+          "[baileys] connecting to wss://web.whatsapp.com/ws/chat",
+        );
+      }
     } else if (args.action === "restart") {
       await ctx.db.patch(session._id, {
         desiredPower: "running",
@@ -465,6 +469,10 @@ export const powerAction = mutation({
       await say(
         "warn",
         `[wings] no agent is holding ${node?.name ?? "this node"} — the ${args.action} stays queued until one reports in`,
+      );
+      await say(
+        "info",
+        "[wings] run the agent on that machine — /dashboard/agent has the exact command",
       );
     } else {
       await say(
@@ -515,8 +523,26 @@ export const deleteSession = mutation({
       .query("waMessages")
       .withIndex("by_session", (q) => q.eq("sessionId", session._id))
       .collect();
+    // Queued work goes with the server. Leaving it behind would hand a later
+    // agent commands for a uuid that no longer exists.
+    const commands = await ctx.db
+      .query("runtimeCommands")
+      .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+      .collect();
+    const installs = await ctx.db
+      .query("sessionInstalls")
+      .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+      .collect();
+    const files = await ctx.db
+      .query("sessionFiles")
+      .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+      .collect();
+
     for (const l of logs) await ctx.db.delete(l._id);
     for (const m of msgs) await ctx.db.delete(m._id);
+    for (const c of commands) await ctx.db.delete(c._id);
+    for (const i of installs) await ctx.db.delete(i._id);
+    for (const f of files) await ctx.db.delete(f._id);
     await ctx.db.delete(session._id);
   },
 });

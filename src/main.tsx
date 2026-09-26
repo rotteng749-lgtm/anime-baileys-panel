@@ -27,6 +27,7 @@ const Sessions = lazy(() => import("./pages/panel/Sessions.tsx"));
 const Files = lazy(() => import("./pages/panel/Files.tsx"));
 const WingsPanel = lazy(() => import("./pages/panel/Wings.tsx"));
 const Console = lazy(() => import("./pages/panel/Console.tsx"));
+const AgentSetup = lazy(() => import("./pages/panel/Agent.tsx"));
 const Messages = lazy(() => import("./pages/panel/Messages.tsx"));
 const Webhooks = lazy(() => import("./pages/panel/Webhooks.tsx"));
 const Keys = lazy(() => import("./pages/panel/Keys.tsx"));
@@ -209,6 +210,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="files" element={<Files />} />
                 <Route path="wings" element={<WingsPanel />} />
                 <Route path="console" element={<Console />} />
+                <Route path="agent" element={<AgentSetup />} />
                 <Route path="messages" element={<Messages />} />
                 <Route path="webhooks" element={<Webhooks />} />
                 <Route path="keys" element={<Keys />} />

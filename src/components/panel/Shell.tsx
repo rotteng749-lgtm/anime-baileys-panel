@@ -1,7 +1,9 @@
 import { useAuth } from "@/hooks/use-auth";
+import { useSessions, useWorkers } from "@/hooks/use-panel";
 import { cn } from "@/lib/utils";
 import {
   Activity,
+  Bot,
   Boxes,
   Cable,
   CalendarClock,
@@ -31,6 +33,7 @@ const NAV = [
   { to: "/dashboard/files", label: "Files", icon: FolderTree },
   { to: "/dashboard/wings", label: "Wings", icon: Terminal },
   { to: "/dashboard/console", label: "Console", icon: Radio },
+  { to: "/dashboard/agent", label: "Agent", icon: Bot },
   { to: "/dashboard/messages", label: "Messages", icon: MessagesSquare },
   { to: "/dashboard/webhooks", label: "Webhooks", icon: Boxes },
   { to: "/dashboard/keys", label: "API Keys", icon: KeyRound },
@@ -43,6 +46,13 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+
+  // A server with no agent cannot move, so the panel says so once, at the top
+  // of every section, instead of letting each console line explain it again.
+  const sessions = useSessions();
+  const workers = useWorkers();
+  const agentOnline = (workers ?? []).some((worker) => worker.online);
+  const showAgentBanner = (sessions ?? []).length > 0 && !agentOnline;
 
   const handleSignOut = async () => {
     await signOut();
@@ -175,6 +185,26 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
           </header>
 
           <main className="relative flex-1 px-4 py-6 sm:px-6 sm:py-8">
+            {showAgentBanner && (
+              <div className="mx-auto mb-5 w-full max-w-6xl">
+                <Link
+                  to="/dashboard/agent"
+                  className="slab flex flex-wrap items-center gap-x-3 gap-y-1 border-amber-400/30 px-4 py-3 text-xs transition-colors hover:border-amber-400/60"
+                >
+                  <Bot className="size-3.5 shrink-0 text-amber-300" />
+                  <span className="font-semibold text-amber-200">
+                    No wings agent is attached
+                  </span>
+                  <span className="text-muted-foreground">
+                    sockets stay queued until one reports in — the setup command is
+                    one click away
+                  </span>
+                  <span className="ml-auto font-semibold text-neon">
+                    Set up the agent →
+                  </span>
+                </Link>
+              </div>
+            )}
             <div className="mx-auto w-full max-w-6xl">{children}</div>
           </main>
         </div>
@@ -187,6 +217,7 @@ const CRUMBS: Record<string, string> = {
   dashboard: "Overview",
   sessions: "Sessions",
   console: "Console",
+  agent: "Agent",
   messages: "Messages",
   webhooks: "Webhooks",
   keys: "API Keys",

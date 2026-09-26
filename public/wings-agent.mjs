@@ -65,27 +65,51 @@ if (!TOKEN) {
 /* Baileys                                                            */
 /* ------------------------------------------------------------------ */
 
-let baileys;
-try {
-  baileys = await import("@whiskeysockets/baileys");
-} catch (error) {
-  console.error(
-    "[wings] @whiskeysockets/baileys is not installed. Run `npm install @whiskeysockets/baileys` next to this file.\n" +
-      String(error?.message ?? error),
-  );
-  process.exit(1);
-}
+/**
+ * Baileys, loaded on demand.
+ *
+ * `--check` proves the agent-to-panel wiring on a machine that has no Baileys
+ * installed and no phone to link, so the import happens the first time a
+ * socket is actually needed.
+ */
+let baileysApi = null;
+let baileysNamespace = null;
 
-const ns = baileys.default && typeof baileys.default === "object" ? baileys.default : baileys;
-const makeWASocket = ns.makeWASocket ?? baileys.makeWASocket ?? baileys.default;
-const useMultiFileAuthState = ns.useMultiFileAuthState ?? baileys.useMultiFileAuthState;
-const fetchLatestBaileysVersion = ns.fetchLatestBaileysVersion ?? baileys.fetchLatestBaileysVersion;
-const DisconnectReason = ns.DisconnectReason ?? baileys.DisconnectReason ?? {};
-const Browsers = ns.Browsers ?? baileys.Browsers;
+async function loadBaileys() {
+  if (baileysApi) return baileysApi;
 
-if (typeof makeWASocket !== "function") {
-  console.error("[wings] this Baileys build does not export makeWASocket — upgrade the package.");
-  process.exit(1);
+  let mod;
+  try {
+    mod = await import("@whiskeysockets/baileys");
+  } catch (error) {
+    console.error(
+      "[wings] @whiskeysockets/baileys is not installed. Run `npm install @whiskeysockets/baileys` next to this file.\n" +
+        String(error?.message ?? error),
+    );
+    process.exit(1);
+  }
+
+  const ns = mod.default && typeof mod.default === "object" ? mod.default : mod;
+  const api = {
+    namespace: ns,
+    makeWASocket: ns.makeWASocket ?? mod.makeWASocket ?? mod.default,
+    useMultiFileAuthState: ns.useMultiFileAuthState ?? mod.useMultiFileAuthState,
+    fetchLatestBaileysVersion:
+      ns.fetchLatestBaileysVersion ?? mod.fetchLatestBaileysVersion,
+    DisconnectReason: ns.DisconnectReason ?? mod.DisconnectReason ?? {},
+    Browsers: ns.Browsers ?? mod.Browsers,
+  };
+
+  if (typeof api.makeWASocket !== "function") {
+    console.error(
+      "[wings] this Baileys build does not export makeWASocket — upgrade the package.",
+    );
+    process.exit(1);
+  }
+
+  baileysApi = api;
+  baileysNamespace = ns;
+  return api;
 }
 
 /* ------------------------------------------------------------------ */
@@ -393,17 +417,24 @@ async function openSocket(session, { fresh = false } = {}) {
   await restoreAuth(session);
   if (fresh) await wipeAuth(session);
 
-  const { state, saveCreds } = await useMultiFileAuthState(
+  const baileys = await loadBaileys();
+  const { state, saveCreds } = await baileys.useMultiFileAuthState(
     path.join(session.dir, "auth"),
   );
-  const latest = await fetchLatestBaileysVersion().catch(() => null);
+  const latest = await baileys.fetchLatestBaileysVersion().catch(() => null);
+  session.disconnectReason = baileys.DisconnectReason;
 
-  const sock = makeWASocket({
+  const sock = baileys.makeWASocket({
     version: latest?.version,
     auth: state,
     logger: sessionLogger(session),
     printQRInTerminal: false,
-    browser: Browsers?.ubuntu?.(`Kaizen ${VERSION}`) ?? ["Kaizen Panel", "Chrome", VERSION],
+    browser:
+      baileys.Browsers?.ubuntu?.(`Kaizen ${VERSION}`) ?? [
+        "Kaizen Panel",
+        "Chrome",
+        VERSION,
+      ],
     syncFullHistory: false,
     markOnlineOnConnect: true,
     generateHighQualityLinkPreview: false,
@@ -464,7 +495,8 @@ async function openSocket(session, { fresh = false } = {}) {
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const reason = statusReason(lastDisconnect);
-      const loggedOut = statusCode === 401 || statusCode === DisconnectReason?.loggedOut;
+      const loggedOut =
+        statusCode === 401 || statusCode === session.disconnectReason?.loggedOut;
       session.sock = null;
 
       await push(session, "connection.update", {
@@ -602,7 +634,7 @@ async function bootEntrypoint(session) {
 
   const localRequire = createRequire(path.join(session.dir, "package.json"));
   globalThis.makeWASocket = () => session.sock;
-  globalThis.baileys = ns;
+  globalThis.baileys = baileysNamespace;
   globalThis.sleep = (ms) => sleep(ms);
   globalThis.require = localRequire;
   globalThis.__kaizen = {
@@ -704,6 +736,16 @@ async function ack(command, status, result) {
 }
 
 async function handleCommand(command) {
+  if (command.uuid && !inventory.has(command.uuid)) {
+    // The panel may have created this server since our last heartbeat, so
+    // refresh once before deciding the command is for a server that is gone.
+    await announce().catch(() => undefined);
+  }
+  if (command.uuid && !inventory.has(command.uuid)) {
+    await ack(command, "error", "the panel has no server with that uuid");
+    return;
+  }
+
   const session = command.uuid ? sessionFor(command.uuid, "command") : null;
   if (command.uuid && !session) {
     await ack(command, "error", "unknown server");
@@ -894,17 +936,30 @@ function cpuPercent() {
   return Math.min(100, Math.round(((usage.user + usage.system) / 1000 / elapsedMs) * 100));
 }
 
-async function heartbeat() {
-  const servers = await nodeCall("runtime:heartbeat", {
+/**
+ * Say hello and pick up the servers this node owns.
+ *
+ * Pure presence — no socket is opened here, which is what makes `--check` safe
+ * to run beside a live agent.
+ */
+async function announce() {
+  const info = await nodeCall("runtime:heartbeat", {
     name: NAME,
     version: VERSION,
     sessions: liveSockets(),
     pid: process.pid,
   });
+  inventory = new Map((info?.servers ?? []).map((server) => [server.uuid, server]));
+  return info;
+}
 
-  inventory = new Map((servers?.servers ?? []).map((server) => [server.uuid, server]));
+/**
+ * Presence plus reconciliation: an agent holds whatever the panel says should
+ * be running, and drops whatever it says should be stopped.
+ */
+async function heartbeat() {
+  const servers = await announce();
 
-  // Reconcile: an agent holds whatever the panel says should be running.
   for (const server of servers?.servers ?? []) {
     if (!server.uuid) continue;
     const session = sessionFor(server.uuid, "heartbeat");
@@ -1014,6 +1069,56 @@ process.on("SIGTERM", () => {
 process.on("unhandledRejection", (error) => {
   console.error(`[wings] unhandled rejection: ${error?.message ?? error}`);
 });
+
+/**
+ * `node wings-agent.mjs --check`
+ *
+ * The fastest way to tell a wiring problem from a socket problem: it
+ * authenticates with the token, registers a heartbeat, prints what this node
+ * owns, and exits. No Baileys, no WhatsApp account, no long-running process.
+ *
+ * Run it when the panel says "no agent is holding this node" and you are not
+ * sure whether the token, the URL or the machine is the problem.
+ */
+async function selfCheck() {
+  log(`wings ${VERSION} — check mode (no socket will be opened)`);
+  log(`panel ${PANEL}`);
+
+  const info = await announce();
+  log(
+    `authenticated as ${info?.node?.id} (${info?.node?.name} · ${info?.node?.location})`,
+  );
+  log(`daemon ${info?.node?.daemon} · agent name "${NAME}" · pid ${process.pid}`);
+
+  const servers = info?.servers ?? [];
+  if (servers.length === 0) {
+    log("this node has no servers yet — create one in the panel and it shows up here");
+  } else {
+    for (const server of servers) {
+      log(
+        `  ${String(server.uuid ?? "").slice(0, 8)}  ${server.name}  desired=${server.desired_power}  actual=${server.power}  ${server.status}`,
+      );
+    }
+    const waiting = servers.filter((s) => s.desired_power === "running");
+    if (waiting.length > 0) {
+      log(
+        `${waiting.length} server(s) are waiting for a socket — run this again without --check to hold them`,
+      );
+    }
+  }
+
+  log("wiring is good. the panel will show this agent for the next 30 seconds.");
+}
+
+const CHECK = process.argv.includes("--check") || process.env.KAIZEN_CHECK === "1";
+
+if (CHECK) {
+  await selfCheck().catch((error) => {
+    console.error(`[wings] check failed: ${error.message}`);
+    process.exit(1);
+  });
+  process.exit(0);
+}
 
 await main().catch((error) => {
   console.error(`[wings] could not start: ${error.message}`);

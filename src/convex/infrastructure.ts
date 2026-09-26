@@ -52,7 +52,8 @@ export const getNest = query({
 /* Nodes                                                              */
 /* ------------------------------------------------------------------ */
 
-async function digest(value: string) {
+/** The SHA-256 the node tokens are stored as. Shared with the seeder. */
+export async function digest(value: string) {
   const data = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(hash))

@@ -36,6 +36,7 @@ export default function AdminInfrastructure() {
   const allocations = useQuery(api.infrastructure.listAllocations, {});
   const workers = useQuery(api.admin.listWorkers, { token });
   const rotate = useMutation(api.infrastructure.rotateNodeToken);
+  const resetDemoToken = useMutation(api.infraSeed.resetNodeToDemoToken);
   const removeNode = useMutation(api.infrastructure.removeNode);
   const [busy, setBusy] = useState<string | undefined>();
 
@@ -161,6 +162,22 @@ export default function AdminInfrastructure() {
                       >
                         <RefreshCw className="size-3" />
                         Rotate token
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy === node._id}
+                        title="Set this node's token back to the seeded demo token, so the panel's agent command works as shown"
+                        onClick={() =>
+                          act(
+                            node._id,
+                            () => resetDemoToken({ nodeId: node._id }),
+                            "Node is back on the demo token",
+                          )
+                        }
+                      >
+                        <KeyRound className="size-3" />
+                        Use demo token
                       </Button>
                       <Button
                         size="sm"
