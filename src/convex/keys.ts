@@ -65,7 +65,72 @@ export const deleteWebhook = mutation({
     if (userId === null || hook.ownerId !== userId) {
       throw new Error("Not your webhook");
     }
+    const deliveries = await ctx.db
+      .query("webhookDeliveries")
+      .withIndex("by_webhook", (q) => q.eq("webhookId", args.webhookId))
+      .collect();
+    for (const row of deliveries) await ctx.db.delete(row._id);
     await ctx.db.delete(hook._id);
+  },
+});
+
+/**
+ * The last few deliveries for this operator's endpoints.
+ *
+ * A webhook row only says it is enabled; this says whether anything actually
+ * reached the URL, which is the thing people ask about.
+ */
+export const listDeliveries = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const rows = await ctx.db
+      .query("webhookDeliveries")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .collect();
+    return rows
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, Math.min(args.limit ?? 20, 100));
+  },
+});
+
+/** Record a delivery the panel itself made (the test button). */
+export const recordTestDelivery = mutation({
+  args: {
+    webhookId: v.id("webhooks"),
+    ok: v.boolean(),
+    statusCode: v.optional(v.number()),
+    detail: v.optional(v.string()),
+    durationMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Not signed in");
+    const hook = await ctx.db.get(args.webhookId);
+    if (hook === null || hook.ownerId !== userId) {
+      throw new Error("Not your webhook");
+    }
+    const now = Date.now();
+    await ctx.db.insert("webhookDeliveries", {
+      webhookId: hook._id,
+      ownerId: userId,
+      sessionId: hook.sessionId,
+      event: "ping",
+      url: hook.url,
+      ok: args.ok,
+      statusCode: args.statusCode,
+      detail: args.detail,
+      durationMs: args.durationMs,
+      createdAt: now,
+    });
+    await ctx.db.patch(hook._id, {
+      deliveries: hook.deliveries + 1,
+      failures: hook.failures + (args.ok ? 0 : 1),
+      lastStatus: args.statusCode,
+      lastDeliveredAt: now,
+    });
+    return { ok: args.ok };
   },
 });
 

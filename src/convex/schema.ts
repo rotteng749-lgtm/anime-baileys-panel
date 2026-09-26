@@ -213,6 +213,31 @@ const schema = defineSchema(
       power: v.optional(
         v.union(v.literal("running"), v.literal("stopped")),
       ),
+      /**
+       * What the operator asked for.
+       *
+       * The panel never invents state: it writes the intent here, queues a
+       * command for the agent, and waits for the agent to report back. When
+       * `desiredPower` and `power` disagree the UI shows the server as
+       * pending rather than pretending it moved.
+       */
+      desiredPower: v.optional(
+        v.union(v.literal("running"), v.literal("stopped")),
+      ),
+      /**
+       * What the agent last reported about the process:
+       * offline | starting | pairing | live | reconnecting | stopping |
+       * stopped | crashed.
+       */
+      workerState: v.optional(v.string()),
+      /** The agent process that owns this socket, once one attached. */
+      workerId: v.optional(v.id("workers")),
+      /** Why the last run ended, straight from the agent. */
+      lastExit: v.optional(v.string()),
+      /** OS process id holding the socket, for the console header. */
+      pid: v.optional(v.number()),
+      /** When the agent last pushed the Baileys keys down to the panel. */
+      credsSyncedAt: v.optional(v.number()),
       suspended: v.optional(v.boolean()),
       /** Installing, installed, or failed — the install queue's headline. */
       installState: v.optional(v.string()),
@@ -249,6 +274,18 @@ const schema = defineSchema(
       jid: v.string(),
       pushName: v.optional(v.string()),
       body: v.string(),
+      /**
+       * The panel-side id for a queued send.
+       *
+       * The panel writes the row the moment a message is queued, then the
+       * agent confirms it with this same id and the real Baileys key, so a
+       * queued message and the message that actually went out are one row.
+       */
+      clientId: v.optional(v.string()),
+      /** The Baileys message id (`key.id`) once the socket sent it. */
+      waMessageId: v.optional(v.string()),
+      /** Which server sent or received it, stamped at insert time. */
+      sessionName: v.optional(v.string()),
       kind: v.union(
         v.literal("text"),
         v.literal("image"),
@@ -268,7 +305,8 @@ const schema = defineSchema(
       createdAt: v.number(),
     })
       .index("by_session", ["sessionId"])
-      .index("by_created", ["createdAt"]),
+      .index("by_created", ["createdAt"])
+      .index("by_client", ["clientId"]),
 
     /** Outbound webhook endpoints that receive Baileys events. */
     webhooks: defineTable({
@@ -283,6 +321,24 @@ const schema = defineSchema(
       lastDeliveredAt: v.optional(v.number()),
       createdAt: v.number(),
     }).index("by_owner", ["ownerId"]),
+
+    /** One row per delivery attempt, so "did it actually go out?" is a fact. */
+    webhookDeliveries: defineTable({
+      /** Absent when the delivery came from a server's own ad-hoc URL. */
+      webhookId: v.optional(v.id("webhooks")),
+      ownerId: v.id("users"),
+      sessionId: v.optional(v.id("waSessions")),
+      event: v.string(),
+      url: v.string(),
+      ok: v.boolean(),
+      statusCode: v.optional(v.number()),
+      detail: v.optional(v.string()),
+      durationMs: v.number(),
+      createdAt: v.number(),
+    })
+      .index("by_owner", ["ownerId"])
+      .index("by_webhook", ["webhookId"])
+      .index("by_created", ["createdAt"]),
 
     /** Panel API keys for driving sessions from your own runtime. */
     panelKeys: defineTable({
@@ -463,6 +519,66 @@ const schema = defineSchema(
     })
       .index("by_node_id", ["id"])
       .index("by_token", ["tokenHash"]),
+
+    /**
+     * A wings agent: the daemon that owns the real Baileys sockets.
+     *
+     * Convex cannot hold a long-lived websocket, so the socket lives in a
+     * process the operator runs next to their machines — this row is that
+     * process's presence. It authenticates with the node's bearer token and
+     * reports in on a heartbeat; when the heartbeats stop, the panel says the
+     * node is offline instead of pretending the socket is still up.
+     */
+    workers: defineTable({
+      nodeId: v.id("nodes"),
+      /** Hostname the agent reported, e.g. "jkt1-wings". */
+      name: v.string(),
+      version: v.string(),
+      /** Live sockets it says it is holding right now. */
+      sessions: v.number(),
+      pid: v.optional(v.number()),
+      startedAt: v.number(),
+      lastSeenAt: v.number(),
+    })
+      .index("by_node", ["nodeId"])
+      .index("by_seen", ["lastSeenAt"]),
+
+    /**
+     * Work the panel hands to an agent.
+     *
+     * Power verbs, sends, pairing refreshes and installs all land here as rows
+     * and the agent claims them on its next poll. Nothing in the panel writes
+     * a socket state directly — this queue is the only path, which is why the
+     * console can tell the truth about what actually happened.
+     */
+    runtimeCommands: defineTable({
+      nodeId: v.id("nodes"),
+      sessionId: v.optional(v.id("waSessions")),
+      kind: v.union(
+        v.literal("start"),
+        v.literal("stop"),
+        v.literal("restart"),
+        v.literal("kill"),
+        v.literal("send"),
+        v.literal("pairing"),
+        v.literal("logout"),
+        v.literal("install"),
+      ),
+      payload: v.optional(v.any()),
+      status: v.union(
+        v.literal("queued"),
+        v.literal("running"),
+        v.literal("done"),
+        v.literal("error"),
+      ),
+      result: v.optional(v.string()),
+      attempts: v.number(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_node_status", ["nodeId", "status"])
+      .index("by_session", ["sessionId"])
+      .index("by_created", ["createdAt"]),
 
     /**
      * An allocation: a reserved ip:port.

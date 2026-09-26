@@ -2,6 +2,7 @@ import { mutation } from "./_generated/server";
 import { seedEggs, seedRuntimes } from "./eggsSeed";
 import { seedInfrastructure } from "./infraSeed";
 import { backfillServerRows } from "./infrastructure";
+import { ensureDefaultAdmin } from "./admin";
 
 /**
  * Seeds everything a fresh install needs before anything else makes sense:
@@ -20,6 +21,8 @@ export const seedAll = mutation({
     const eggs = await seedEggs(ctx);
     // Runs after the nodes exist, so a session can claim a free ip:port.
     const backfilled = await backfillServerRows(ctx);
-    return { runtimes, infrastructure, eggs, backfilled };
+    // The panel needs an operator before the admin area is usable at all.
+    const admin = await ensureDefaultAdmin(ctx);
+    return { runtimes, infrastructure, eggs, backfilled, admin };
   },
 });

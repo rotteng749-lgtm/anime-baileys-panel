@@ -1,5 +1,12 @@
 import { StatusPill } from "@/components/Brand";
-import { CpuMeter, EmptyState, MemMeter, PairingCode, QrBlock } from "@/components/panel/Parts";
+import { PowerBar } from "@/components/panel/PowerBar";
+import {
+  CpuMeter,
+  EmptyState,
+  MemMeter,
+  PairingCode,
+  QrBlock,
+} from "@/components/panel/Parts";
 import { PageHead } from "@/components/panel/Shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +14,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useInstallProgress } from "@/hooks/use-install";
+import { wingsPanelUrl } from "@/lib/demo";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { CheckCircle2, Loader2, PackageCheck, XCircle } from "lucide-react";
 import {
+  useAgent,
   usePanelActions,
-  useRuntimeLoop,
+  useServerDetail,
+  useSessionCommands,
   useSessionLogs,
   useSessionMessages,
   useSessions,
@@ -21,15 +31,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  Cable,
+  Bot,
   ChevronDown,
   Link2,
   PlugZap,
-  Power,
   RefreshCw,
   Send,
   Terminal,
   Trash2,
+  Unplug,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -55,19 +65,22 @@ export default function Console() {
     (sessions ?? []).find((s) => s._id === selected) ?? (sessions ?? [])[0];
   const activeId = active?._id;
 
-  useRuntimeLoop(sessions);
+  // The node this server lives on, and the agent holding it. Everything the
+  // console says about the socket comes from those two facts plus the events
+  // the agent reported.
+  const detail = useServerDetail(activeId);
+  const agent = useAgent(detail?.node?._id);
+  const commands = useSessionCommands(activeId, 4);
   const logs = useSessionLogs(activeId);
   const messages = useSessionMessages(activeId);
   const {
-    startPairing,
-    regenerate,
-    completePairing,
-    disconnect,
-    deleteSession,
-    sendMessage,
-    receiveMessage,
+    power,
+    requestPairing,
+    logout,
+    queueMessage,
     setAutoReply,
     updateConfig,
+    deleteSession,
   } = usePanelActions();
 
   const [to, setTo] = useState("");
@@ -112,14 +125,20 @@ export default function Console() {
   }, [logs]);
 
   const online = active?.status === "connected";
+  const running = active?.power === "running";
+  const pending =
+    active?.desiredPower !== undefined && active.desiredPower !== active.power;
 
   const onSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeId || !to.trim() || !body.trim()) return;
     setSending(true);
     try {
-      await sendMessage({ sessionId: activeId, to: to.trim(), body: body.trim() });
+      // Queued for the agent: the message row stays `queued` until the socket
+      // confirms it, so the list never claims a send that did not happen.
+      await queueMessage({ sessionId: activeId, to: to.trim(), body: body.trim() });
       setBody("");
+      toast.success("Queued — the agent will send it on the socket");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Send failed");
     } finally {
@@ -177,39 +196,116 @@ export default function Console() {
           <div className="space-y-5">
             <PairingPanel
               session={active}
-              onStart={() => startPairing({ sessionId: active._id })}
-              onRegenerate={() => regenerate({ sessionId: active._id })}
-              onComplete={() => completePairing({ sessionId: active._id })}
+              agentName={agent?.name}
+              onStart={() => power({ sessionId: active._id, action: "start" })}
+              onRefresh={() => requestPairing({ sessionId: active._id })}
+              onLogout={() => logout({ sessionId: active._id })}
             />
+
+            {!agent && (
+              <div className="slab border-amber-400/25 p-5">
+                <div className="flex items-center gap-2">
+                  <Bot className="size-4 text-amber-300" />
+                  <h3 className="font-display text-xs font-bold uppercase tracking-[0.2em] text-amber-200">
+                    No agent attached
+                  </h3>
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  {detail?.node?.name ?? "This node"} has no wings agent reporting in, so
+                  nothing here can open a socket. Start the agent on the node and this
+                  server's commands run for real.
+                </p>
+                <pre className="well mt-3 overflow-x-auto p-3 font-mono text-[10px] leading-relaxed text-mist">
+{`NODE_TOKEN=<your wings token> \\
+KAIZEN_PANEL=${wingsPanelUrl()} \\
+node wings-agent.mjs`}
+                </pre>
+                <p className="mt-3 font-mono text-[10px] text-mist">
+                  {detail?.node?.id
+                    ? `node ${detail.node.id} · ${detail.node.location} · daemon ${detail.node.daemonVersion}`
+                    : "no node assigned yet"}
+                </p>
+              </div>
+            )}
 
             <div className="slab p-5">
               <h3 className="font-display text-xs font-bold uppercase tracking-[0.2em] text-mist">
                 Runtime
               </h3>
+              <dl className="mt-4 space-y-1.5 font-mono text-[11px]">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-mist">process</dt>
+                  <dd
+                    className={cn(
+                      pending ? "text-amber-300" : running ? "text-emerald-300" : "text-mist",
+                    )}
+                  >
+                    {pending
+                      ? `${active.workerState ?? "pending"} → ${active.desiredPower}`
+                      : (active.workerState ?? "offline")}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-mist">agent</dt>
+                  <dd className="truncate text-foreground">
+                    {agent ? `${agent.name} · v${agent.version}` : "none on this node"}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-mist">pid</dt>
+                  <dd className="text-foreground">{active.pid ?? "—"}</dd>
+                </div>
+                {active.lastExit && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-mist">last exit</dt>
+                    <dd className="truncate text-rose-300">{active.lastExit}</dd>
+                  </div>
+                )}
+              </dl>
+
               <div className="mt-4 space-y-3">
                 <CpuMeter cpu={active.cpu} />
                 <MemMeter memoryMb={active.memoryMb} />
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => receiveMessage({ sessionId: active._id })}
-                  title="Simulate an inbound messages.upsert event"
-                >
-                  <ArrowDownLeft className="size-3" />
-                  Inbound
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!online}
-                  onClick={() => disconnect({ sessionId: active._id })}
-                >
-                  <Power className="size-3" />
-                  Stop
-                </Button>
+
+              <div className="mt-4 border-t border-border/60 pt-4">
+                <PowerBar
+                  sessionId={active._id}
+                  power={active.power}
+                  disabled={active.suspended === true}
+                />
               </div>
+
+              {commands && commands.length > 0 && (
+                <div className="mt-4 border-t border-border/60 pt-4">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-mist">
+                    Command queue
+                  </p>
+                  <div className="space-y-1">
+                    {commands.slice(0, 4).map((cmd) => (
+                      <div
+                        key={cmd._id}
+                        className="flex items-center justify-between gap-2 font-mono text-[10px]"
+                      >
+                        <span className="text-foreground">{cmd.kind}</span>
+                        <span
+                          className={cn(
+                            cmd.status === "done"
+                              ? "text-emerald-300"
+                              : cmd.status === "error"
+                                ? "text-rose-300"
+                                : cmd.status === "running"
+                                  ? "text-neon"
+                                  : "text-amber-300",
+                          )}
+                        >
+                          {cmd.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="slab space-y-4 p-5">
@@ -324,7 +420,11 @@ export default function Console() {
                     {!installDone && (
                       <p className="mt-1 flex items-center gap-2 text-mist">
                         <Loader2 className="size-3 animate-spin" />
-                        wings is running the install script…
+                        {agent
+                          ? `agent ${agent.name} is running the install script…`
+                          : `queued — waiting for an agent on ${
+                              detail?.node?.name ?? "this node"
+                            }`}
                       </p>
                     )}
                     {installDone && install.status === "installed" && (
@@ -464,9 +564,10 @@ export default function Console() {
 /** The pairing handshake: QR ref, pairing code, and the link action. */
 function PairingPanel({
   session,
+  agentName,
   onStart,
-  onRegenerate,
-  onComplete,
+  onRefresh,
+  onLogout,
 }: {
   session: {
     _id: string;
@@ -477,9 +578,10 @@ function PairingPanel({
     pairingExpiresAt?: number;
     jid?: string;
   };
+  agentName?: string;
   onStart: () => void;
-  onRegenerate: () => void;
-  onComplete: () => void;
+  onRefresh: () => void;
+  onLogout: () => void;
 }) {
   const waiting = session.status === "awaiting_pairing";
   const connecting = session.status === "connecting";
@@ -491,28 +593,47 @@ function PairingPanel({
         <h3 className="font-display text-xs font-bold uppercase tracking-[0.2em] text-mist">
           Pairing
         </h3>
-        {waiting && (
+        {!online && (
           <button
             type="button"
-            onClick={onRegenerate}
+            onClick={onRefresh}
             className="flex items-center gap-1 text-[10px] font-semibold text-neon hover:text-holo"
           >
             <RefreshCw className="size-3" />
-            refresh
+            request a new {session.pairMethod === "code" ? "code" : "QR"}
           </button>
         )}
       </div>
 
       {online ? (
-        <div className="mt-4 flex items-center gap-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-4">
-          <Link2 className="size-5 shrink-0 text-emerald-300" />
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-emerald-200">Device linked</p>
-            <p className="truncate font-mono text-[10px] text-emerald-300/80">
-              {session.jid}
-            </p>
+        <>
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-4">
+            <Link2 className="size-5 shrink-0 text-emerald-300" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-emerald-200">Device linked</p>
+              <p className="truncate font-mono text-[10px] text-emerald-300/80">
+                {session.jid}
+              </p>
+            </div>
           </div>
-        </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 w-full text-rose-300"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Unlink this device? WhatsApp will drop the session and the agent will wipe the creds.",
+                )
+              ) {
+                onLogout();
+              }
+            }}
+          >
+            <Unplug className="size-3" />
+            Unlink device
+          </Button>
+        </>
       ) : (
         <>
           {session.pairMethod === "qr" ? (
@@ -547,10 +668,10 @@ function PairingPanel({
 
           <div className="mt-4 space-y-2">
             {waiting ? (
-              <Button className="w-full" onClick={onComplete}>
-                <Cable className="size-4" />
-                Mark device as linked
-              </Button>
+              <p className="well px-3 py-2.5 text-center text-[11px] text-mist">
+                Waiting for the phone to confirm — the agent reports the link the
+                moment the socket opens.
+              </p>
             ) : (
               <Button
                 className="w-full"
@@ -559,9 +680,14 @@ function PairingPanel({
                 onClick={onStart}
               >
                 <PlugZap className="size-4" />
-                {connecting ? "Connecting…" : "Start pairing"}
+                {connecting ? "Connecting…" : "Start the socket"}
               </Button>
             )}
+            <p className="font-mono text-[10px] leading-relaxed text-mist">
+              {agentName
+                ? `agent ${agentName} holds this node`
+                : "no agent attached — commands stay queued"}
+            </p>
           </div>
         </>
       )}

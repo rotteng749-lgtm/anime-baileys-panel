@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { GenericId } from "convex/values";
 import { makeUuid } from "./infrastructure";
+import { enqueue, liveWorker } from "./runtimeDb";
+import { layEgg } from "./eggs";
 import type { PairMethod } from "./schema";
 
 /**
@@ -15,6 +17,24 @@ import type { PairMethod } from "./schema";
  * Types are derived from the schema directly rather than from the generated
  * `Doc`/`Id` helpers, which keeps this module portable across Convex versions.
  */
+
+/**
+ * Normalise a phone number or JID into Baileys remote-JID form.
+ *
+ * A dispatch is addressed to a person, but the socket wants a JID, so the
+ * panel accepts either and fills in the suffix the way Baileys does.
+ */
+function toJid(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed.includes("@")) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length < 6) throw new Error("Enter a valid phone number");
+  return `${digits}@s.whatsapp.net`;
+}
+
+function truncate(text: string, max: number) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
 
 /**
  * Resolve the signed-in user, or throw. Every session in this app is scoped to
@@ -295,7 +315,9 @@ export const createSession = mutation({
       startup: egg?.startup,
       image: egg?.image,
       power: "stopped",
-      installState: egg ? "installing" : "installed",
+      desiredPower: "stopped",
+      workerState: "offline",
+      installState: egg ? "queued" : "installed",
 
       createdAt: now,
       lastSeenAt: now,
@@ -322,11 +344,19 @@ export const createSession = mutation({
         createdAt: now,
       });
     }
-    if (egg) {
+    if (egg && node) {
+      // Picking an egg while creating the server is the same operation as
+      // installing it later: lay the files down and let the agent run the
+      // install script for real.
+      await layEgg(ctx, {
+        session: { _id: sessionId, nodeId: node._id, name: args.name },
+        egg,
+      });
+    } else if (egg) {
       await ctx.db.insert("sessionLogs", {
         sessionId,
-        level: "info",
-        message: `[wings] pulling image ${egg.image ?? egg.runtime}, running install script`,
+        level: "warn",
+        message: `[wings] ${egg.name} is assigned but there is no node to install it on`,
         createdAt: now,
       });
     }
@@ -341,13 +371,17 @@ export const createSession = mutation({
 /**
  * Power actions, in the four verbs a hosting panel uses.
  *
- * The panel sends the verb, wings translates it to whatever stops the agent —
- * for us that is the socket lifecycle, not Docker:
+ * The panel sends the verb and nothing else happens here: the command lands in
+ * the node's queue, the agent that owns the node picks it up and moves the
+ * real process, and the status that follows comes back from the socket.
  *
- *   start   → bring the socket up and walk the pairing handshake
+ *   start   → open the socket and walk the pairing handshake
  *   stop    → SIGTERM: close cleanly, keep the creds on disk
- *   restart → stop, then start
+ *   restart → stop, then start again
  *   kill    → SIGKILL: drop the socket now, no flush, no goodbye
+ *
+ * If no agent is holding the node the command stays queued. The console says
+ * exactly that instead of showing a socket that is not there.
  */
 export const powerAction = mutation({
   args: {
@@ -367,6 +401,13 @@ export const powerAction = mutation({
     }
     if (session.suspended) throw new Error("This server is suspended");
 
+    const nodeId = session.nodeId;
+    if (!nodeId) {
+      throw new Error("This server has no node — assign it an allocation first");
+    }
+    const node = await ctx.db.get(nodeId);
+    const worker = await liveWorker(ctx, nodeId);
+
     const now = Date.now();
     const say = async (level: "info" | "warn" | "command", message: string) =>
       ctx.db.insert("sessionLogs", {
@@ -376,54 +417,63 @@ export const powerAction = mutation({
         createdAt: Date.now(),
       });
 
-    const start = async () => {
-      if (session.status === "connected") {
-        await say("warn", `[wings] start ignored — already running`);
-        return;
-      }
-      await ctx.db.patch(session._id, {
-        status: "awaiting_pairing",
-        power: "running",
-        lastSeenAt: now,
-        statusChangedAt: now,
-      });
-      await say("command", `[wings] POST /api/servers/${session.uuid ?? session._id}/power → start`);
-      await say("info", `[baileys] connecting to wss://web.whatsapp.com/ws/chat`);
-    };
+    if (args.action === "start" && session.status === "connected") {
+      await say("warn", "[wings] start ignored — the socket is already live");
+      return { action: args.action, accepted: false as const, agent: worker?.name ?? null };
+    }
 
-    const stop = async (reason: string, level: "warn" | "command") => {
-      if (session.status === "disconnected" && session.power === "stopped") {
-        await say("warn", `[wings] stop ignored — already stopped`);
-        return;
-      }
-      await ctx.db.patch(session._id, {
-        status: "disconnected",
-        power: "stopped",
-        jid: undefined,
-        pushName: undefined,
-        qrPayload: undefined,
-        pairingCode: undefined,
-        pairingExpiresAt: undefined,
-        cpu: 0,
-        memoryMb: 0,
-        lastSeenAt: now,
-        statusChangedAt: now,
-      });
-      await say(level, `[wings] power → stop (${reason})`);
-      await say("warn", `[baileys] connection closed — ${reason}`);
-    };
+    await say(
+      "command",
+      `[wings] POST /api/servers/${session.uuid ?? session._id}/power → ${args.action}`,
+    );
 
     if (args.action === "start") {
-      await start();
-    } else if (args.action === "stop") {
-      await stop("stopped by operator", "command");
-    } else if (args.action === "kill") {
-      await stop("killed — no flush", "command");
-      await ctx.db.patch(session._id, { jid: undefined });
+      await ctx.db.patch(session._id, {
+        desiredPower: "running",
+        workerState: worker === null ? "offline" : "starting",
+        lastSeenAt: now,
+        statusChangedAt: now,
+      });
+      await say(
+        "info",
+        "[baileys] connecting to wss://web.whatsapp.com/ws/chat",
+      );
+    } else if (args.action === "restart") {
+      await ctx.db.patch(session._id, {
+        desiredPower: "running",
+        workerState: worker === null ? "offline" : "restarting",
+        lastSeenAt: now,
+        statusChangedAt: now,
+      });
     } else {
-      await stop("restarting", "command");
-      await start();
+      await ctx.db.patch(session._id, {
+        desiredPower: "stopped",
+        workerState:
+          worker === null ? "offline" : args.action === "kill" ? "killing" : "stopping",
+        lastSeenAt: now,
+      });
     }
+
+    await enqueue(ctx, {
+      nodeId,
+      sessionId: session._id,
+      kind: args.action,
+      payload: { by: "panel", force: args.action === "kill" },
+    });
+
+    if (worker === null) {
+      await say(
+        "warn",
+        `[wings] no agent is holding ${node?.name ?? "this node"} — the ${args.action} stays queued until one reports in`,
+      );
+    } else {
+      await say(
+        "info",
+        `[wings] ${args.action} handed to agent ${worker.name} — waiting for the socket`,
+      );
+    }
+
+    return { action: args.action, accepted: true as const, agent: worker?.name ?? null };
   },
 });
 
@@ -602,6 +652,242 @@ export const updateConfig = mutation({
 });
 
 /** Tear the socket down and drop the stored creds. */
+/**
+ * The bit every control action needs: which node, and whether anyone is home.
+ *
+ * A session with no node cannot be controlled — there is no machine to run it
+ * on — and a session whose node has no agent can still be *asked*, so the
+ * command is queued and the console explains the wait.
+ */
+async function controlTarget(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: any,
+  session: { nodeId?: GenericId<"nodes"> },
+): Promise<{ nodeId: GenericId<"nodes">; worker: { name: string } | null }> {
+  const nodeId = session.nodeId;
+  if (!nodeId) {
+    throw new Error("This server has no node — assign it an allocation first");
+  }
+  const worker = await liveWorker(ctx, nodeId);
+  return {
+    nodeId,
+    worker: worker === null ? null : { name: String(worker.name) },
+  };
+}
+
+/**
+ * Dispatch a message through the real socket.
+ *
+ * The row is written straight away with a `queued` status and a client id; the
+ * agent sends it for real and confirms the same row with the Baileys message
+ * id. Nothing is marked `sent` until the socket said so.
+ */
+export const queueMessage = mutation({
+  args: {
+    sessionId: v.id("waSessions"),
+    to: v.string(),
+    body: v.string(),
+    kind: v.optional(
+      v.union(
+        v.literal("text"),
+        v.literal("image"),
+        v.literal("sticker"),
+        v.literal("poll"),
+        v.literal("location"),
+        v.literal("contact"),
+        v.literal("file"),
+      ),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("Session not found");
+    }
+    if (session.suspended) throw new Error("This server is suspended");
+    if (session.status !== "connected") {
+      throw new Error("The socket is not connected — start the server first");
+    }
+
+    const jid = toJid(args.to);
+    const body = args.body.trim();
+    if (!body) throw new Error("Message is empty");
+    const kind = args.kind ?? "text";
+    const now = Date.now();
+    const { nodeId, worker } = await controlTarget(ctx, session);
+
+    const clientId = `msg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    await ctx.db.insert("waMessages", {
+      sessionId: session._id,
+      direction: "outbound",
+      jid,
+      pushName: jid.split("@")[0],
+      body,
+      kind,
+      status: "queued",
+      clientId,
+      sessionName: session.name,
+      createdAt: now,
+    });
+
+    await enqueue(ctx, {
+      nodeId,
+      sessionId: session._id,
+      kind: "send",
+      payload: { clientId, to: jid, body, kind },
+    });
+
+    const verb =
+      kind === "text" ? "sendText" : `send${kind[0].toUpperCase()}${kind.slice(1)}`;
+    await ctx.db.insert("sessionLogs", {
+      sessionId: session._id,
+      level: "command",
+      message: `${verb}(${jid}, ${truncate(body, 60)}) — queued${
+        worker === null ? " (no agent attached)" : ` for ${worker.name}`
+      }`,
+      createdAt: now,
+    });
+
+    return clientId;
+  },
+});
+
+/**
+ * Ask for a fresh QR or pairing code.
+ *
+ * The agent re-opens the socket with `pairing` intent: for a QR session that
+ * means the next `connection.update` carries a new ref, and for a code session
+ * it means another `requestPairingCode` on the number on the server.
+ */
+export const requestPairing = mutation({
+  args: { sessionId: v.id("waSessions") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("Session not found");
+    }
+    if (session.status === "connected") {
+      throw new Error("This device is already linked");
+    }
+    if (session.pairMethod === "code" && !session.phone) {
+      throw new Error("Add a phone number to this server before asking for a code");
+    }
+
+    const now = Date.now();
+    const { nodeId, worker } = await controlTarget(ctx, session);
+
+    await ctx.db.patch(session._id, {
+      status: "connecting",
+      desiredPower: "running",
+      qrPayload: undefined,
+      pairingCode: undefined,
+      pairingExpiresAt: undefined,
+      workerState: worker === null ? "offline" : "pairing",
+      lastSeenAt: now,
+      statusChangedAt: now,
+    });
+
+    await enqueue(ctx, {
+      nodeId,
+      sessionId: session._id,
+      kind: "pairing",
+      payload: {
+        pairMethod: session.pairMethod,
+        phone: session.phone ?? null,
+      },
+    });
+
+    await ctx.db.insert("sessionLogs", {
+      sessionId: session._id,
+      level: "command",
+      message: `[wings] pairing refresh requested (${
+        session.pairMethod === "code" ? "requestPairingCode" : "QR ref"
+      })${worker === null ? " — no agent attached yet" : ` via ${worker.name}`}`,
+      createdAt: now,
+    });
+
+    return { ok: true as const, agent: worker?.name ?? null };
+  },
+});
+
+/**
+ * Unlink the device.
+ *
+ * `logout` is a real Baileys call: it tells WhatsApp, which invalidates the
+ * session, and the agent wipes the local creds. A stop keeps the device
+ * linked; this is the verb that does not.
+ */
+export const logoutSession = mutation({
+  args: {
+    sessionId: v.id("waSessions"),
+    wipeCreds: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("Session not found");
+    }
+
+    const now = Date.now();
+    const { nodeId, worker } = await controlTarget(ctx, session);
+
+    await ctx.db.patch(session._id, {
+      desiredPower: "stopped",
+      workerState: worker === null ? "offline" : "logging_out",
+      lastSeenAt: now,
+    });
+
+    await enqueue(ctx, {
+      nodeId,
+      sessionId: session._id,
+      kind: "logout",
+      payload: { wipeCreds: args.wipeCreds ?? true },
+    });
+
+    await ctx.db.insert("sessionLogs", {
+      sessionId: session._id,
+      level: "warn",
+      message: `[wings] logout queued — the agent will tell WhatsApp and drop the creds${
+        worker === null ? " (no agent attached yet)" : ""
+      }`,
+      createdAt: now,
+    });
+
+    return { ok: true as const, agent: worker?.name ?? null };
+  },
+});
+
+/** Panel command: toggle the auto-reply the agent sends on the socket. */
+export const setAutoReply = mutation({
+  args: { sessionId: v.id("waSessions"), enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (session === null || session.ownerId !== userId) {
+      throw new Error("Session not found");
+    }
+    await ctx.db.patch(session._id, { autoReply: args.enabled });
+    await ctx.db.insert("sessionLogs", {
+      sessionId: session._id,
+      level: "info",
+      message: `[kaizen] auto-reply ${args.enabled ? "enabled" : "disabled"}${
+        args.enabled ? " — the agent answers inbound messages on the socket" : ""
+      }`,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Panel-side stop.
+ *
+ * Kept because the console used it, and because "close the socket, keep the
+ * device linked" is a real and common thing to want. It now queues the same
+ * command the Stop verb does instead of writing the socket state itself.
+ */
 export const disconnectSession = mutation({
   args: { sessionId: v.id("waSessions"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -610,23 +896,29 @@ export const disconnectSession = mutation({
     if (session === null || session.ownerId !== userId) {
       throw new Error("Session not found");
     }
+
     const now = Date.now();
+    const { nodeId, worker } = await controlTarget(ctx, session);
+
     await ctx.db.patch(session._id, {
-      status: "disconnected",
-      jid: undefined,
-      pushName: undefined,
-      qrPayload: undefined,
-      pairingCode: undefined,
-      pairingExpiresAt: undefined,
-      cpu: 0,
-      memoryMb: 0,
+      desiredPower: "stopped",
+      workerState: worker === null ? "offline" : "stopping",
       lastSeenAt: now,
-      statusChangedAt: now,
     });
+
+    await enqueue(ctx, {
+      nodeId,
+      sessionId: session._id,
+      kind: "stop",
+      payload: { by: "panel", reason: args.reason ?? "stopped by operator" },
+    });
+
     await ctx.db.insert("sessionLogs", {
       sessionId: session._id,
-      level: "warn",
-      message: `[baileys] connection closed — ${args.reason ?? "stopped by operator"}`,
+      level: "command",
+      message: `[wings] power → stop (${args.reason ?? "stopped by operator"})${
+        worker === null ? " — queued, no agent attached" : ""
+      }`,
       createdAt: now,
     });
   },

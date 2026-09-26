@@ -29,9 +29,9 @@ const BRIDGE: { group: string; members: { name: string; note: string }[] }[] = [
   {
     group: "Socket",
     members: [
-      { name: "makeWASocket()", note: "returns the simulated sock — ev, user, sendMessage" },
-      { name: "sock.ev", note: "on / off / emit, same shape as the Baileys event bus" },
-      { name: "sock.sendMessage(jid, content)", note: "echoes into the console as [sent]" },
+      { name: "makeWASocket()", note: "on a node: the live socket. In the sandbox: a stand-in with the same shape" },
+      { name: "sock.ev", note: "on / off / emit — Baileys' own event bus, so messages.upsert is real" },
+      { name: "sock.sendMessage(jid, content)", note: "on a node it goes to WhatsApp; the sandbox echoes it as [sent]" },
       { name: "sock.groupMetadata(jid)", note: "group subject and participants" },
     ],
   },
@@ -94,11 +94,32 @@ export default function Wings() {
           The agent that holds the socket
         </h1>
         <p className="mt-4 max-w-2xl leading-relaxed text-muted-foreground">
-          An egg ships a script. Wings is what runs it — the layer that keeps a
-          WhatsApp connection alive, hands your code a live{" "}
-          <code className="font-mono text-xs text-neon">sock</code>, and streams
+          An egg ships a script. Wings is what runs it — a real Node process you
+          run on the machine, holding one live Baileys socket per server, handing
+          your code that{" "}
+          <code className="font-mono text-xs text-neon">sock</code>, and streaming
           every line it produces back to the console.
         </p>
+
+        <div className="slab mt-6 p-5">
+          <h2 className="font-display text-xs font-bold uppercase tracking-[0.2em] text-mist">
+            Run the agent
+          </h2>
+          <pre className="well mt-3 overflow-x-auto p-4 font-mono text-[11px] leading-relaxed text-mist">
+{`npm install @whiskeysockets/baileys
+NODE_TOKEN=wings_... \\
+KAIZEN_PANEL=https://your-deployment.convex.cloud \\
+node wings-agent.mjs`}
+          </pre>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Download it from{" "}
+            <a className="text-neon hover:text-holo" href="/wings-agent.mjs" download>
+              /wings-agent.mjs
+            </a>
+            . The token is the one shown when a node was created in the admin area;
+            the agent needs nothing else — no Convex account, no database access.
+          </p>
+        </div>
 
         {/* ---- Lifecycle ---- */}
         <div className="rune-rule my-10" />

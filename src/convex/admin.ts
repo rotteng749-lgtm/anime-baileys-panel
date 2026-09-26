@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { seedCatalogRows } from "./catalog";
+import { AGENT_TIMEOUT_MS } from "./runtimeDb";
 
 /**
  * The admin area.
@@ -98,6 +99,52 @@ export const createFirstAdmin = mutation({
     });
     return { ok: true };
   },
+});
+
+/**
+ * The operator account a fresh panel starts with.
+ *
+ * Declared here rather than in a fixture so the same credentials the login
+ * screen advertises are the ones that get hashed into the database.
+ */
+export const DEFAULT_ADMIN_USERNAME = "panxcz";
+export const DEFAULT_ADMIN_PASSWORD = "Panxcz-1";
+
+/**
+ * Create the default operator if nobody has claimed the panel yet.
+ *
+ * Idempotent, and it only ever runs while `adminAccounts` is empty — the same
+ * window `createFirstAdmin` uses, so it cannot be used to slip a second
+ * operator in later.
+ */
+export async function ensureDefaultAdmin(ctx: AdminCtx) {
+  const existing = await ctx.db.query("adminAccounts").first();
+  if (existing !== null) {
+    return { created: false as const, username: String(existing.username) };
+  }
+
+  const salt = randomToken().slice(4, 20);
+  await ctx.db.insert("adminAccounts", {
+    username: DEFAULT_ADMIN_USERNAME,
+    passwordHash: await digest(`${salt}:${DEFAULT_ADMIN_PASSWORD}`),
+    salt,
+    label: "operator",
+    createdAt: Date.now(),
+  });
+
+  return { created: true as const, username: DEFAULT_ADMIN_USERNAME };
+}
+
+/**
+ * Claim the panel with the default operator account.
+ *
+ * The admin login screen calls this on a fresh install, so "username panxcz,
+ * password Panxcz-1" works out of the box and the hash lands in the database
+ * rather than in the client.
+ */
+export const bootstrapDefaultAdmin = mutation({
+  args: {},
+  handler: async (ctx) => await ensureDefaultAdmin(ctx),
 });
 
 export const signIn = mutation({
@@ -387,5 +434,47 @@ export const listMembers = query({
   handler: async (ctx, args) => {
     await getAdmin(ctx, args.token);
     return await ctx.db.query("users").collect();
+  },
+});
+
+/* ------------------------------------------------------------------ */
+/* Wings agents                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The agents reporting in — the processes that hold the sockets.
+ *
+ * A node says what it *can* run; this says what is actually running it. An
+ * agent stops being `online` the moment its heartbeat goes quiet, which is how
+ * the panel knows to say "queued" instead of pretending a socket is up.
+ */
+export const listWorkers = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await getAdmin(ctx, args.token);
+    const workers = await ctx.db.query("workers").collect();
+    const nodes = await ctx.db.query("nodes").collect();
+    const sessions = await ctx.db.query("waSessions").collect();
+    const cutoff = Date.now() - AGENT_TIMEOUT_MS;
+
+    return workers
+      .map((worker) => {
+        const node = nodes.find((n) => n._id === worker.nodeId);
+        return {
+          _id: worker._id,
+          name: worker.name,
+          version: worker.version,
+          pid: worker.pid,
+          sessions: worker.sessions,
+          startedAt: worker.startedAt,
+          lastSeenAt: worker.lastSeenAt,
+          online: worker.lastSeenAt > cutoff,
+          nodeName: node?.name,
+          nodeSlug: node?.id,
+          nodeFqdn: node?.fqdn,
+          holding: sessions.filter((s) => s.workerId === worker._id).length,
+        };
+      })
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
   },
 });

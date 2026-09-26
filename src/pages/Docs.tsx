@@ -76,7 +76,7 @@ export default function Docs() {
         },
         {
           kind: "p",
-          text: "The order you meet them in: pick a nest, pick an egg off the shelf, pick a node with room, claim an allocation on it, give the server its limits. The panel writes the row, then asks wings to act — over HTTPS, with the node's bearer token.",
+          text: "The order you meet them in: pick a nest, pick an egg off the shelf, pick a node with room, claim an allocation on it, give the server its limits. The panel writes the row and queues the command; the agent on that node claims it on its next poll and does the work.",
         },
         {
           kind: "code",
@@ -137,16 +137,20 @@ export default function Docs() {
       body: [
         {
           kind: "p",
-          text: "The panel sends a verb and wings translates it into whatever stops the agent. For us that is the socket lifecycle, not Docker — but the four verbs and their meanings are the same.",
+          text: "The panel writes the verb and nothing else. It lands in the node's command queue with the intent — desired power — and the agent holding that node claims it on the next poll, moves the real process, and reports back. Until it does, the console shows the server as pending, because that is what it is: a requested state, not a reached one.",
         },
         {
           kind: "list",
           items: [
-            "start — bring the socket up and walk the pairing handshake",
+            "start — open the socket and walk the pairing handshake",
             "stop — close cleanly, creds stay on disk",
-            "restart — stop, then start",
+            "restart — stop, then start again",
             "kill — drop it now: no flush, no goodbye",
           ],
+        },
+        {
+          kind: "p",
+          text: "If no agent is attached to the node, the command stays queued and the console says so. That is the whole point of the queue: the panel never claims a socket moved when nothing was there to move it.",
         },
         {
           kind: "code",
@@ -172,7 +176,11 @@ export default function Docs() {
       body: [
         {
           kind: "p",
-          text: "An egg is the unit of reuse, and it lives on a nest. It declares what the agent is — name, description, runtime image, startup command, stop command, install script — and ships the files that make it real: index.js, package.json, a premium store, a README. Installing lays every file onto the server's disk, then runs the install script.",
+          text: "An egg is the unit of reuse, and it lives on a nest. It declares what the agent is — name, description, runtime image, startup command, stop command, install script — and ships the files that make it real: index.js, package.json, a premium store, a README.",
+        },
+        {
+          kind: "p",
+          text: "In a bot context, installing an egg means three concrete things, and the node's agent does all of them: it writes the egg's files into the server's volume (that folder is the bot's source tree), it runs the egg's install script inside that folder and streams everything the script printed back as the install transcript, and it records the startup line — node index.js — as what the agent boots whenever the server is switched on. Nothing is marked installed until a real install script has run.",
         },
         {
           kind: "list",
@@ -258,7 +266,26 @@ export default function Docs() {
       body: [
         {
           kind: "p",
-          text: "Wings is the layer between an egg's script and WhatsApp, and between the panel and the machine. It receives commands over HTTPS with the node's bearer token, keeps the socket up, owns the volume, and streams every line the script prints back to the console.",
+          text: "Wings is a real process you run on your own machine — the panel never holds a websocket. Convex cannot keep a socket alive for weeks, so the agent does: it authenticates with the node's wings token, heartbeats so the panel can tell when a node is offline, claims power and send commands from a queue, and owns one live @whiskeysockets/baileys socket per server.",
+        },
+        {
+          kind: "p",
+          text: "Everything the panel shows is something the agent reported: the QR comes from connection.update, the pairing code from requestPairingCode, sent messages from sock.sendMessage, inbound from messages.upsert, meters from the process itself, and webhook deliveries from those same events. Stop means the socket closed; kill means it was dropped without a flush; and the creds are saved both on the agent's disk and in the server's volume, so a restart does not ask you to link the device again.",
+        },
+        {
+          kind: "code",
+          lang: "bash",
+          lines: [
+            "npm install @whiskeysockets/baileys",
+            "NODE_TOKEN=wings_... \\",
+            "KAIZEN_PANEL=https://your-deployment.convex.cloud \\",
+            "node wings-agent.mjs",
+          ],
+        },
+        {
+          kind: "note",
+          tone: "neon",
+          text: "The agent is served from this site at /wings-agent.mjs, and the console hands you the exact command with your deployment's URL filled in.",
         },
         {
           kind: "code",
@@ -277,15 +304,7 @@ export default function Docs() {
         },
         {
           kind: "p",
-          text: "Your code never imports the SDK. Wings hands it a live sock with the same names a real Baileys socket has, and require is wired to the server's own files — so require('./premium.json') reads the copy the install laid down. The same file runs in three places unchanged: the sandbox, a node, and the runner on your own machine.",
-        },
-        {
-          kind: "code",
-          lang: "bash",
-          lines: [
-            "npm install @whiskeysockets/baileys",
-            "BAILEYS_DIR=./sandbox node wings-runner.mjs",
-          ],
+          text: "Your code never imports the SDK. Wings hands it a socket with the same names a real Baileys socket has, and require is wired to the server's own files — so require('./premium.json') reads the copy the install laid down. On a node that socket is the live one; in this site's playground it is a stand-in, so you can try a script before you install it.",
         },
         {
           kind: "note",

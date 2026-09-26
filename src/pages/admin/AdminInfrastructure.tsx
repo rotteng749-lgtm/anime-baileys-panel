@@ -2,6 +2,7 @@ import { AdminHead } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { useMutation, useQuery } from "convex/react";
 import {
+  Bot,
   Copy,
   Globe,
   HardDrive,
@@ -16,7 +17,8 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
-import { DEFAULT_NODE_TOKEN } from "@/lib/demo";
+import { readAdminToken } from "@/lib/admin-token";
+import { DEFAULT_NODE_TOKEN, wingsPanelUrl } from "@/lib/demo";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,9 +30,11 @@ import { cn } from "@/lib/utils";
  */
 
 export default function AdminInfrastructure() {
+  const token = readAdminToken() ?? "";
   const nests = useQuery(api.infrastructure.listNests, {});
   const nodes = useQuery(api.infrastructure.listNodes, {});
   const allocations = useQuery(api.infrastructure.listAllocations, {});
+  const workers = useQuery(api.admin.listWorkers, { token });
   const rotate = useMutation(api.infrastructure.rotateNodeToken);
   const removeNode = useMutation(api.infrastructure.removeNode);
   const [busy, setBusy] = useState<string | undefined>();
@@ -253,6 +257,73 @@ export default function AdminInfrastructure() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      {/* ---- Agents ---- */}
+      <section className="mb-9">
+        <h2 className="mb-4 flex items-center gap-2 font-display text-sm font-bold uppercase tracking-[0.2em] text-mist">
+          <Bot className="size-3.5" />
+          Wings agents
+        </h2>
+        {(workers ?? []).length === 0 ? (
+          <div className="slab p-5">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              No agent has reported in yet, so nothing here is holding a socket. Run
+              one on a node and its servers become controllable:
+            </p>
+            <pre className="well mt-3 overflow-x-auto p-4 font-mono text-[11px] leading-relaxed text-sky-200">
+              {`npm install @whiskeysockets/baileys
+NODE_TOKEN=<this node's wings token> \\
+KAIZEN_PANEL=${wingsPanelUrl()} \\
+node wings-agent.mjs`}
+            </pre>
+            <p className="mt-3 text-[11px] text-mist">
+              The agent is served from this site at{" "}
+              <a
+                className="text-neon hover:text-holo"
+                href="/wings-agent.mjs"
+                download
+              >
+                /wings-agent.mjs
+              </a>
+              .
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {(workers ?? []).map((worker) => (
+              <div
+                key={worker._id}
+                className="slab flex flex-wrap items-center gap-x-4 gap-y-2 p-5"
+              >
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    worker.online ? "bg-emerald-400" : "bg-mist",
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-display text-sm font-bold">{worker.name}</p>
+                  <p className="mt-1 font-mono text-[11px] text-mist">
+                    {worker.nodeName ?? "unknown node"} · {worker.nodeFqdn ?? "—"} · v
+                    {worker.version}
+                    {worker.pid ? ` · pid ${worker.pid}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px]">
+                  <span className={worker.online ? "text-emerald-300" : "text-mist"}>
+                    {worker.online ? "online" : "stale"}
+                  </span>
+                  <span className="text-mist">{worker.sessions} socket(s)</span>
+                  <span className="text-mist">{worker.holding} server(s)</span>
+                  <span className="text-mist">
+                    seen {new Date(worker.lastSeenAt).toLocaleTimeString()}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>

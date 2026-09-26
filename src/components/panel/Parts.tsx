@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import { Activity, Cpu, MemoryStick } from "lucide-react";
+import QRCode from "react-qr-code";
 
 /** Stat tile with a lit top edge, like an instrument readout. */
 export function StatTile({
@@ -106,11 +107,13 @@ export function MemMeter({ memoryMb }: { memoryMb: number }) {
 }
 
 /**
- * A scannable-looking pairing block.
+ * The pairing QR.
  *
- * The payload is a real Baileys `ref` string, rendered as a deterministic
- * module matrix so the same code always produces the same image — the same
- * property a real QR encoder relies on.
+ * The payload is the exact `ref` string the socket emitted on
+ * `connection.update` — nothing here generates or reshapes it — and it is
+ * encoded with a real QR encoder, so this is the same matrix WhatsApp writes
+ * for a linked-device scan. If the socket has not handed over a ref yet, the
+ * panel shows the empty state instead of a decorative code.
  */
 export function QrBlock({
   payload,
@@ -121,101 +124,21 @@ export function QrBlock({
   className?: string;
   size?: number;
 }) {
-  const matrix = buildMatrix(payload);
-  const cells = 25;
-  const quiet = 2;
-  const total = cells + quiet * 2;
-  const unit = size / total;
-
   return (
     <div
-      className={cn(
-        "well relative overflow-hidden p-3",
-        className,
-      )}
+      className={cn("well relative overflow-hidden p-3", className)}
       style={{ width: size, height: size }}
     >
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        shapeRendering="crispEdges"
-        className="rounded-md"
-        role="img"
-        aria-label="WhatsApp pairing QR code"
-      >
-        <rect width={size} height={size} fill="#f2f7ff" />
-        {matrix.map((row, y) =>
-          row.map((on, x) =>
-            on ? (
-              <rect
-                key={`${x}-${y}`}
-                x={(x + quiet) * unit}
-                y={(y + quiet) * unit}
-                width={unit}
-                height={unit}
-                fill="#0b1533"
-              />
-            ) : null,
-          ),
-        )}
-        {/* Finder patterns, the three corners a scanner locks onto. */}
-        {[
-          [0, 0],
-          [cells - 7, 0],
-          [0, cells - 7],
-        ].map(([fx, fy]) => (
-          <g key={`${fx}-${fy}`}>
-            <rect
-              x={(fx + quiet) * unit}
-              y={(fy + quiet) * unit}
-              width={7 * unit}
-              height={7 * unit}
-              fill="#0b1533"
-            />
-            <rect
-              x={(fx + quiet + 1) * unit}
-              y={(fy + quiet + 1) * unit}
-              width={5 * unit}
-              height={5 * unit}
-              fill="#f2f7ff"
-            />
-            <rect
-              x={(fx + quiet + 2) * unit}
-              y={(fy + quiet + 2) * unit}
-              width={3 * unit}
-              height={3 * unit}
-              fill="#0b1533"
-            />
-          </g>
-        ))}
-      </svg>
+      <QRCode
+        value={payload}
+        size={size - 24}
+        level="L"
+        bgColor="#f2f7ff"
+        fgColor="#0b1533"
+        style={{ width: "100%", height: "100%" }}
+      />
       <div className="pointer-events-none absolute inset-0 rounded-md ring-1 ring-inset ring-neon/25" />
     </div>
-  );
-}
-
-/** Deterministic hash → module matrix, so a given ref always looks the same. */
-function buildMatrix(payload: string): boolean[][] {
-  const cells = 25;
-  const bits: number[] = [];
-  for (let i = 0; i < payload.length; i++) {
-    const c = payload.charCodeAt(i);
-    for (let b = 7; b >= 0; b--) bits.push((c >> b) & 1);
-  }
-  let cursor = 0;
-  const next = () => {
-    if (cursor >= bits.length) {
-      cursor = 0;
-      // Re-seed with a deterministic LCG so the stream never starves.
-      for (let i = 0; i < 64; i++) {
-        bits[i] = (bits[i] * 31 + 17 + i) & 1;
-      }
-    }
-    return bits[cursor++];
-  };
-  return Array.from({ length: cells }, () =>
-    Array.from({ length: cells }, () => (next() ? 1 : 0) === 1),
   );
 }
 

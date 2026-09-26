@@ -3,7 +3,8 @@ import { v } from "convex/values";
 import type { GenericId } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { makeUuid } from "./infrastructure";
-import { normalisePath } from "./eggs";
+import { layEgg, normalisePath } from "./eggs";
+import { enqueue } from "./runtimeDb";
 
 /**
  * The wings API.
@@ -274,54 +275,35 @@ export const apiPower = mutation({
     if (session.suspended) throw new Error("server is suspended");
 
     const now = Date.now();
-    if (args.action === "start") {
-      await ctx.db.patch(sid(session), {
-        status: "awaiting_pairing",
-        power: "running",
-        lastSeenAt: now,
-        statusChangedAt: now,
-      });
-      await log(ctx, sid(session), "command", `[wings] power → start`);
-      await log(
-        ctx,
-        sid(session),
-        "info",
-        `[baileys] connecting to wss://web.whatsapp.com/ws/chat`,
-      );
-    } else {
-      await ctx.db.patch(sid(session), {
-        status: "disconnected",
-        power: "stopped",
-        jid: undefined,
-        qrPayload: undefined,
-        cpu: 0,
-        memoryMb: 0,
-        lastSeenAt: now,
-        statusChangedAt: now,
-      });
-      await log(
-        ctx,
-        sid(session),
-        "command",
-        args.action === "kill"
-          ? "[wings] power → kill (SIGKILL, no flush)"
-          : `[wings] power → ${args.action}`,
-      );
-      if (args.action === "restart") {
-        await ctx.db.patch(sid(session), {
-          status: "awaiting_pairing",
-          power: "running",
-          statusChangedAt: now,
-        });
-        await log(
-          ctx,
-          sid(session),
-          "info",
-          `[baileys] reconnecting after restart`,
-        );
-      }
-    }
-    return { action: args.action, accepted: true };
+    const desired =
+      args.action === "start" || args.action === "restart" ? "running" : "stopped";
+
+    // Same rule as the panel: the API asks, the node's agent does. The status
+    // that follows is whatever the socket reports back.
+    await ctx.db.patch(sid(session), {
+      desiredPower: desired,
+      workerState: "pending",
+      lastSeenAt: now,
+      statusChangedAt: now,
+    });
+
+    await enqueue(ctx, {
+      nodeId: nid(node),
+      sessionId: sid(session),
+      kind: args.action,
+      payload: { by: "wings api", force: args.action === "kill" },
+    });
+
+    await log(
+      ctx,
+      sid(session),
+      "command",
+      args.action === "kill"
+        ? "[wings] power → kill queued (SIGKILL, no flush)"
+        : `[wings] power → ${args.action} queued for the node agent`,
+    );
+
+    return { action: args.action, accepted: true, desired };
   },
 });
 
@@ -384,6 +366,31 @@ export const apiWriteFile = mutation({
   },
 });
 
+/**
+ * Remove one file from the volume.
+ *
+ * The agent uses this when a device is unlinked: the Baileys keys are gone the
+ * moment WhatsApp invalidates them, so the copies in the volume have to go too.
+ */
+export const apiDeleteFile = mutation({
+  args: { token: v.string(), uuid: v.string(), path: v.string() },
+  handler: async (ctx, args) => {
+    const node = await nodeOrThrow(ctx, args.token);
+    const session = await byUuid(ctx, args.uuid, node._id);
+    if (session === null) throw new Error("not found");
+
+    const clean = normalisePath(args.path);
+    if (!clean) throw new Error("bad path");
+
+    const file = await readFile(ctx, sid(session), clean);
+    if (file === null) return { deleted: false, path: clean };
+
+    await ctx.db.delete(file._id);
+    await log(ctx, sid(session), "debug", `[wings] deleted ${clean}`);
+    return { deleted: true, path: clean };
+  },
+});
+
 export const apiInstall = mutation({
   args: {
     token: v.string(),
@@ -406,42 +413,20 @@ export const apiInstall = mutation({
     if (egg === null) throw new Error("unknown egg");
     if (egg.status !== "published") throw new Error("egg is not published");
 
-    const files = await ctx.db
-      .query("eggFiles")
-      .withIndex("by_egg", (q) => q.eq("eggId", egg._id))
-      .collect();
-    for (const file of files) {
-      const clean = normalisePath(file.path);
-      if (clean) await writeFile(ctx, sid(session), clean, file.contents);
-    }
-
-    await ctx.db.patch(sid(session), {
-      eggId: egg._id,
-      nestId: egg.nestId,
-      startup: egg.startup,
-      image: egg.image,
-      installState: "installing",
+    // One code path for both doors: the same lay-down, install script and
+    // startup line the panel's install wizard uses.
+    const installId = await layEgg(ctx, {
+      session,
+      egg,
+      variables: args.variables,
     });
 
-    const installId = await ctx.db.insert("sessionInstalls", {
-      sessionId: sid(session),
-      eggId: egg._id,
-      eggName: egg.name,
+    return {
+      install: installId,
+      egg: egg.slug,
+      startup: egg.startup,
       runtime: egg.runtime,
-      startup: egg.startup,
-      variables: args.variables ?? egg.env ?? [],
-      status: "queued",
-      log: [`queued ${egg.name} on ${egg.runtime}`],
-      createdAt: Date.now(),
-    });
-    await ctx.db.patch(egg._id, { installs: egg.installs + 1 });
-    await log(
-      ctx,
-      sid(session),
-      "info",
-      `[wings] install queued — ${egg.name} (${egg.runtime})`,
-    );
-    return { install: installId, files: files.length };
+    };
   },
 });
 

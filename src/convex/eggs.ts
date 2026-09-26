@@ -1,6 +1,11 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import type { GenericId } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { enqueue } from "./runtimeDb";
+
+/** The index builder as this module uses it: one `eq` per indexed column. */
+type Q = { eq: (field: string, value: unknown) => Q } & Record<string, unknown>;
 import { EGG_CATEGORIES } from "./schema";
 
 /**
@@ -269,11 +274,137 @@ export function normalisePath(input: string) {
 /* ------------------------------------------------------------------ */
 
 /** Install an egg onto one of your sessions. */
+/**
+ * What "installing an egg" means.
+ *
+ * In a game panel an egg is a Docker image plus an install script plus a
+ * startup line. Here the same three things mean three concrete steps, and the
+ * agent does all of them for real:
+ *
+ *   1. lay the egg's files into the session volume (the .js, the .json, the
+ *      README) — that prefix is the bot's source tree
+ *   2. run the egg's install script in that folder (npm/bun install, a codegen
+ *      step, whatever the egg declares) and stream the output back as the
+ *      install transcript
+ *   3. record the startup line — `node index.js` — as the command the agent
+ *      runs whenever the server is powered on
+ *
+ * So an egg is a bot blueprint: files + install + startup + env. Installing it
+ * is provisioning, not configuration, and it is the same operation whether the
+ * operator picked the egg while creating the server or installed it later.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// The rows arrive from two callers that both hold a loose context, so the
+// helper takes them loosely too — the alternative is casting at every field.
+export async function layEgg(
+  ctx: any,
+  args: {
+    session: any;
+    egg: any;
+    variables?: string[];
+    skipScripts?: boolean;
+  },
+): Promise<GenericId<"sessionInstalls">> {
+  const now = Date.now();
+
+  // 1. The egg's files, written into the session volume.
+  const files = await ctx.db
+    .query("eggFiles")
+    .withIndex("by_egg", (q: { eq: (f: "eggId", v: unknown) => unknown }) =>
+      q.eq("eggId", args.egg._id),
+    )
+    .collect();
+  for (const file of files) {
+    const path = normalisePath(file.path);
+    if (!path) continue;
+    const existing = await ctx.db
+      .query("sessionFiles")
+      .withIndex("by_session_path", (q: Q) =>
+        q.eq("sessionId", args.session._id).eq("path", path),
+      )
+      .unique();
+    if (existing !== null) {
+      await ctx.db.patch(existing._id, {
+        contents: file.contents,
+        isDir: false,
+        size: file.contents.length,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("sessionFiles", {
+        sessionId: args.session._id,
+        path,
+        contents: file.contents,
+        isDir: false,
+        size: file.contents.length,
+        updatedAt: now,
+      });
+    }
+  }
+
+  // 2. The manifest the agent installs from, and the transcript row it fills.
+  const variables = args.variables ?? args.egg.env ?? [];
+  const installId = await ctx.db.insert("sessionInstalls", {
+    sessionId: args.session._id,
+    eggId: args.egg._id,
+    eggName: args.egg.name,
+    runtime: args.egg.runtime,
+    startup: args.egg.startup,
+    variables,
+    status: "queued",
+    log: [`queued ${args.egg.name} on ${args.egg.runtime}`],
+    createdAt: now,
+  });
+
+  await ctx.db.patch(args.egg._id, { installs: args.egg.installs + 1 });
+
+  // 3. The session now starts the egg's way, and the panel waits for a real
+  //    install rather than claiming one happened.
+  await ctx.db.patch(args.session._id, {
+    eggId: args.egg._id,
+    nestId: args.egg.nestId,
+    startup: args.egg.startup,
+    image: args.egg.image,
+    skipScripts: args.skipScripts ?? false,
+    installState: "queued",
+    desiredPower: "stopped",
+  });
+
+  await enqueue(ctx, {
+    nodeId: args.session.nodeId,
+    sessionId: args.session._id,
+    kind: "install",
+    payload: {
+      installId,
+      eggSlug: args.egg.slug,
+      eggName: args.egg.name,
+      runtime: args.egg.runtime,
+      image: args.egg.image ?? null,
+      startup: args.egg.startup,
+      stopCommand: args.egg.stopCommand ?? "SIGTERM",
+      installScript: args.egg.installScript,
+      variables,
+      skipScripts: args.skipScripts ?? false,
+    },
+  });
+
+  await ctx.db.insert("sessionLogs", {
+    sessionId: args.session._id,
+    level: "info",
+    message: `[wings] install queued — ${args.egg.name} (${args.egg.runtime}) on the node's agent`,
+    createdAt: now,
+  });
+
+  return installId;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 export const installEgg = mutation({
   args: {
     sessionId: v.id("waSessions"),
     eggSlug: v.string(),
     variables: v.optional(v.array(v.string())),
+    skipScripts: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -285,6 +416,9 @@ export const installEgg = mutation({
     if (session.status === "connected") {
       throw new Error("Disconnect the session before installing");
     }
+    if (!session.nodeId) {
+      throw new Error("This server has no node — nothing can install it");
+    }
 
     const egg = await ctx.db
       .query("eggs")
@@ -294,60 +428,12 @@ export const installEgg = mutation({
       throw new Error("That egg is not available");
     }
 
-    // Lay the egg's files down before the install script runs.
-    const files = await ctx.db
-      .query("eggFiles")
-      .withIndex("by_egg", (q) => q.eq("eggId", egg._id))
-      .collect();
-    for (const file of files) {
-      const path = normalisePath(file.path);
-      if (!path) continue;
-      const existing = await ctx.db
-        .query("sessionFiles")
-        .withIndex("by_session_path", (q) =>
-          q.eq("sessionId", args.sessionId).eq("path", path),
-        )
-        .unique();
-      if (existing !== null) {
-        await ctx.db.patch(existing._id, {
-          contents: file.contents,
-          isDir: false,
-          size: file.contents.length,
-          updatedAt: Date.now(),
-        });
-      } else {
-        await ctx.db.insert("sessionFiles", {
-          sessionId: args.sessionId,
-          path,
-          contents: file.contents,
-          isDir: false,
-          size: file.contents.length,
-          updatedAt: Date.now(),
-        });
-      }
-    }
-
-    const installId = await ctx.db.insert("sessionInstalls", {
-      sessionId: args.sessionId,
-      eggId: egg._id,
-      eggName: egg.name,
-      runtime: egg.runtime,
-      startup: egg.startup,
-      variables: args.variables ?? egg.env ?? [],
-      status: "queued",
-      log: [`queued ${egg.name} on ${egg.runtime}`],
-      createdAt: Date.now(),
+    return await layEgg(ctx, {
+      session,
+      egg,
+      variables: args.variables,
+      skipScripts: args.skipScripts,
     });
-
-    await ctx.db.patch(egg._id, { installs: egg.installs + 1 });
-    await ctx.db.insert("sessionLogs", {
-      sessionId: args.sessionId,
-      level: "info",
-      message: `[wings] install queued — ${egg.name} (${egg.runtime})`,
-      createdAt: Date.now(),
-    });
-
-    return installId;
   },
 });
 
@@ -380,44 +466,10 @@ export const listInstalls = query({
 });
 
 /** The install queue runs a step at a time; the panel ticks it forward. */
-export const advanceInstall = mutation({
-  args: { installId: v.id("sessionInstalls") },
-  handler: async (ctx, args) => {
-    const install = await ctx.db.get(args.installId);
-    if (install === null) return;
-    if (
-      install.status === "installed" ||
-      install.status === "failed"
-    ) {
-      return;
-    }
-
-    const now = Date.now();
-    const elapsed = now - install.createdAt;
-    const log = [...install.log];
-
-    if (install.status === "queued") {
-      const egg = install.eggId ? await ctx.db.get(install.eggId) : null;
-      log.push(`resolving runtime ${install.runtime}`);
-      log.push(`install script: ${egg?.installScript ?? "npm install"}`);
-      await ctx.db.patch(args.installId, { status: "installing", log });
-      return;
-    }
-
-    if (install.status === "installing" && elapsed > 2_500) {
-      log.push("dependencies resolved");
-      log.push(`installed with ${install.startup}`);
-      await ctx.db.patch(args.installId, {
-        status: "installed",
-        log,
-        completedAt: now,
-      });
-      await ctx.db.insert("sessionLogs", {
-        sessionId: install.sessionId,
-        level: "success",
-        message: `[wings] install complete — ${install.eggName} ready`,
-        createdAt: now,
-      });
-    }
-  },
-});
+/**
+ * Install progress is written by the agent, not stepped here.
+ *
+ * The old stepper advanced a transcript on a timer, which looked like an
+ * install without being one. Progress now arrives as `install` runtime events
+ * (`runtimeDb.applyEvent`), each one a line the install script actually printed.
+ */

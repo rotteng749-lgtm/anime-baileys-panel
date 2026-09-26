@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { KeyRound, Loader2, LogIn, ShieldCheck, UserPlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { ADMIN_TOKEN_KEY } from "@/lib/admin-token";
@@ -17,9 +17,19 @@ import { ADMIN_TOKEN_KEY } from "@/lib/admin-token";
  * a salted digest. On a fresh install there is no account yet, so the same
  * screen offers to claim the first one — after that, that path is closed.
  */
+/**
+ * The operator account a fresh panel ships with, matching
+ * `ensureDefaultAdmin` on the server. It is provisioned automatically the
+ * first time this screen sees an empty install, so the panel is usable out of
+ * the box — change the password afterwards if this is a real deployment.
+ */
+const DEFAULT_USERNAME = "panxcz";
+const DEFAULT_PASSWORD = "Panxcz-1";
+
 export default function AdminLogin() {
   const exists = useQuery(api.admin.adminExists, {});
   const createFirstAdmin = useMutation(api.admin.createFirstAdmin);
+  const bootstrapDefaultAdmin = useMutation(api.admin.bootstrapDefaultAdmin);
   const signIn = useMutation(api.admin.signIn);
   const check = useQuery(
     api.admin.adminMe,
@@ -28,11 +38,31 @@ export default function AdminLogin() {
       : "skip",
   );
 
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState(DEFAULT_USERNAME);
+  const [password, setPassword] = useState(DEFAULT_PASSWORD);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A ref, not state: this is a one-shot side effect, and re-rendering for it
+  // would only re-run the effect it guards.
+  const provisioned = useRef(false);
+
+  // Fresh install? Put the default operator in the database before anyone
+  // types a password, and pre-fill the form with it.
+  useEffect(() => {
+    if (exists !== false || provisioned.current) return;
+    provisioned.current = true;
+    void bootstrapDefaultAdmin().then(
+      (result) => {
+        if (result.created) {
+          toast.success(`Default operator ready — ${result.username}`);
+        }
+      },
+      () => {
+        provisioned.current = false;
+      },
+    );
+  }, [exists, bootstrapDefaultAdmin]);
 
   // Already holding a valid token? Skip the form.
   useEffect(() => {
@@ -84,9 +114,14 @@ export default function AdminLogin() {
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {setupMode
-              ? "No admin account exists yet. Create the first one — this can only be done once."
+              ? "No admin account exists yet. The default operator is being created for you."
               : "Username and password. Separate from member accounts."}
           </p>
+          {!setupMode && (
+            <p className="well mt-4 px-3 py-2 text-center font-mono text-[11px] text-mist">
+              default operator · {DEFAULT_USERNAME} / {DEFAULT_PASSWORD}
+            </p>
+          )}
         </div>
 
         <form onSubmit={submit} className="app-frame rounded-2xl p-6">

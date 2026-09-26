@@ -8,7 +8,6 @@ import {
   useActivity,
   usePanelActions,
   useRecentMessages,
-  useRuntimeLoop,
   useSessions,
 } from "@/hooks/use-panel";
 import { useQuery } from "convex/react";
@@ -38,8 +37,7 @@ export default function Dashboard() {
   const recent = useRecentMessages(6);
   const myPosts = useQuery(api.community.myPosts, {});
   const myBookings = useQuery(api.bookings.myBookings, {});
-  const { startPairing } = usePanelActions();
-  useRuntimeLoop(sessions);
+  const { power } = usePanelActions();
 
   const totals = activity?.totals;
   const online = sessions?.filter((s) => s.status === "connected") ?? [];
@@ -154,7 +152,7 @@ export default function Dashboard() {
                             variant="outline"
                             onClick={(e) => {
                               e.preventDefault();
-                              void startPairing({ sessionId: session._id });
+                              void power({ sessionId: session._id, action: "start" });
                             }}
                           >
                             Pair

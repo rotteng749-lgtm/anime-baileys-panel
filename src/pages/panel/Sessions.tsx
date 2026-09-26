@@ -4,7 +4,7 @@ import { CpuMeter, EmptyState, MemMeter } from "@/components/panel/Parts";
 import { PageHead } from "@/components/panel/Shell";
 import { PowerBar } from "@/components/panel/PowerBar";
 import { Button } from "@/components/ui/button";
-import { usePanelActions, useRuntimeLoop, useSessions } from "@/hooks/use-panel";
+import { usePanelActions, useSessions } from "@/hooks/use-panel";
 import { motion } from "framer-motion";
 import {
   Cable,
@@ -20,8 +20,7 @@ import { cn } from "@/lib/utils";
 
 export default function Sessions() {
   const sessions = useSessions();
-  const { startPairing, deleteSession } = usePanelActions();
-  useRuntimeLoop(sessions);
+  const { requestPairing, deleteSession } = usePanelActions();
 
   const list = sessions ?? [];
 
@@ -135,8 +134,18 @@ export default function Sessions() {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      void startPairing({ sessionId: session._id });
-                      toast.success("Opening socket…");
+                      void requestPairing({ sessionId: session._id }).then(
+                        (result) =>
+                          toast.success(
+                            result.agent
+                              ? `Pairing requested via ${result.agent}`
+                              : "Pairing queued — no agent on this node yet",
+                          ),
+                        (err: unknown) =>
+                          toast.error(
+                            err instanceof Error ? err.message : "Could not pair",
+                          ),
+                      );
                     }}
                   >
                     <Cable className="size-3" />

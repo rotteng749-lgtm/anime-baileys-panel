@@ -3,9 +3,14 @@ import { PageHead } from "@/components/panel/Shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { usePanelActions, useWebhooks } from "@/hooks/use-panel";
+import {
+  usePanelActions,
+  useWebhookDeliveries,
+  useWebhooks,
+} from "@/hooks/use-panel";
+import type { GenericId } from "convex/values";
 import { WEBHOOK_EVENTS } from "@/convex/schema";
-import { Boxes, Plus, Trash2, Webhook } from "lucide-react";
+import { Boxes, Plus, Send, Trash2, Webhook } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -20,10 +25,39 @@ const EVENT_LABELS: Record<string, string> = {
 
 export default function Webhooks() {
   const hooks = useWebhooks();
-  const { createWebhook, toggleWebhook, deleteWebhook } = usePanelActions();
+  const deliveries = useWebhookDeliveries(10);
+  const { createWebhook, toggleWebhook, deleteWebhook, testWebhook } =
+    usePanelActions();
   const [url, setUrl] = useState("");
   const [selected, setSelected] = useState<string[]>(["messages.upsert"]);
   const [pending, setPending] = useState(false);
+  const [testing, setTesting] = useState<string | undefined>();
+
+  /**
+   * Fire one event at one endpoint.
+   *
+   * The delivery runs server-side and is recorded either way, so this button
+   * answers "is my receiver wired up?" with a status code instead of a guess.
+   */
+  const runTest = async (webhookId: GenericId<"webhooks">) => {
+    setTesting(webhookId);
+    try {
+      const result = await testWebhook({ webhookId });
+      if (result.ok) {
+        toast.success(`Delivered — ${result.status} in ${result.durationMs}ms`);
+      } else {
+        toast.error(
+          `Endpoint refused it — ${
+            result.status === 0 ? result.detail : `HTTP ${result.status}`
+          }`,
+        );
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send");
+    } finally {
+      setTesting(undefined);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,7 +79,7 @@ export default function Webhooks() {
       <PageHead
         eyebrow="Integrations"
         title="Webhooks"
-        description="Push raw Baileys events to your own services. Sign the payload, verify the ref, and your bot logic stays where it belongs."
+        description="Push raw Baileys events to your own services. Every connection, message and receipt the agent reports is POSTed to the endpoints you pick here, and every attempt is logged."
       />
 
       <form onSubmit={submit} className="slab mb-6 p-5">
@@ -156,7 +190,26 @@ export default function Webhooks() {
                 ))}
               </div>
 
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] text-mist">
+                <span>{hook.deliveries} delivered</span>
+                <span className={hook.failures > 0 ? "text-rose-300" : undefined}>
+                  {hook.failures} failed
+                </span>
+                <span>
+                  {hook.lastStatus ? `last HTTP ${hook.lastStatus}` : "never called"}
+                </span>
+              </div>
+
               <div className="mt-4 flex gap-2 border-t border-border/60 pt-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={testing === hook._id}
+                  onClick={() => runTest(hook._id)}
+                >
+                  <Send className="size-3" />
+                  {testing === hook._id ? "Sending…" : "Send test"}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -178,6 +231,38 @@ export default function Webhooks() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {(deliveries ?? []).length > 0 && (
+        <div className="mt-8">
+          <h3 className="mb-3 font-display text-xs font-bold uppercase tracking-[0.2em] text-mist">
+            Recent deliveries
+          </h3>
+          <div className="well divide-y divide-white/5">
+            {(deliveries ?? []).map((row) => (
+              <div
+                key={row._id}
+                className="flex items-center gap-3 px-4 py-2.5 font-mono text-[11px]"
+              >
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase",
+                    row.ok
+                      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                      : "border-rose-400/40 bg-rose-400/10 text-rose-300",
+                  )}
+                >
+                  {row.statusCode ? row.statusCode : "fail"}
+                </span>
+                <span className="shrink-0 text-neon">{row.event}</span>
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  {row.url}
+                </span>
+                <span className="shrink-0 text-mist">{row.durationMs}ms</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

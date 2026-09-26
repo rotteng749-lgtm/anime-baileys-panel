@@ -74,7 +74,7 @@ export default function Messages() {
         <EmptyState
           icon={MessagesSquare}
           title="Nothing on the wire"
-          description="Link a device and dispatch a message — or push an inbound event from the console — and it will show up here."
+          description="Link a device and the traffic lands here: inbound from the socket's messages.upsert, outbound from your bot and from the console's dispatch form."
         />
       ) : (
         <div className="well divide-y divide-white/5">
