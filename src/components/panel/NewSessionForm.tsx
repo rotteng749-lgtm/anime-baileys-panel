@@ -48,7 +48,7 @@ export function NewSessionForm() {
       setName("");
       setPhone("");
       toast.success("Session provisioned");
-      navigate(`/panel/console?session=${id}`);
+      navigate(`/dashboard/console?session=${id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create session");
     } finally {

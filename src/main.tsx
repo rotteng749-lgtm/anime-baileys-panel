@@ -6,7 +6,7 @@ import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 
 // Lazy load route components for better code splitting
@@ -128,6 +128,20 @@ const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
 
 
+/**
+ * Old panel links.
+ *
+ * The authenticated area used to live under `/panel/…`, and those URLs are
+ * still out in the world: bookmarks, shared console links, a tab somebody left
+ * open. Rather than showing them the "not on this node" page, this sends them
+ * to the matching `/dashboard/…` route — same section, same query string.
+ */
+function LegacyPanelRedirect() {
+  const location = useLocation();
+  const target = location.pathname.replace(/^\/panel/, "/dashboard");
+  return <Navigate to={`${target}${location.search}`} replace />;
+}
+
 function RouteSyncer() {
   const location = useLocation();
   useEffect(() => {
@@ -218,6 +232,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="members" element={<AdminMembers />} />
               </Route>
 
+              <Route path="/panel/*" element={<LegacyPanelRedirect />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
